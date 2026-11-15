@@ -42,6 +42,20 @@ impl Drop for Workspace {
         fs::remove_dir_all(&self.root).expect("remove exact test-owned directory");
     }
 }
+pub(crate) use super::outbound_tests::object as control_object;
+
+pub(crate) fn fail_next_control_commit(store: &mut Store, committed: bool) {
+    store.fault = Some(if committed {
+        TestFault::AfterCommit
+    } else {
+        TestFault::BeforeCommit
+    });
+}
+
+pub(crate) fn pending_control_acks(store: &Store) -> usize {
+    store.outbound_acks.len()
+}
+
 pub(crate) const PEER_2: &str = "0202020202020202020202020202020202020202020202020202020202020201";
 pub(crate) const PEER_3: &str = "0303030303030303030303030303030303030303030303030303030303030301";
 pub(crate) const ACTIVITY: ActivityId = [1; 32];

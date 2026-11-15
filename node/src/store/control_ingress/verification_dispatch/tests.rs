@@ -12,6 +12,57 @@ fn dispatch(store: &mut Store) -> ControlVerificationDispatch {
 }
 
 #[test]
+fn verification_dispatch_signals_return_and_abandonment_without_a_mailbox() {
+    let workspace = Workspace::new();
+    let mut store = workspace.create();
+    store.advance_clock(clock(1000)).unwrap();
+    for peer in 2..=4 {
+        store
+            .queue_control_candidate(ACTIVITY, test_credential(peer), &[peer])
+            .unwrap();
+    }
+    let (wake, signal) = sync_channel(1);
+    let mut tasks = (0..3).map(|_| {
+        store
+            .dispatch_control_with_wake(Some(wake.clone()))
+            .unwrap()
+            .dispatch
+            .unwrap()
+    });
+    assert_eq!(signal.try_recv(), Err(TryRecvError::Empty));
+    for _ in 0..2 {
+        tasks
+            .next()
+            .unwrap()
+            .return_result(ControlVerificationOutcome::Rejected)
+            .unwrap();
+    }
+    let abandoned = tasks.next().unwrap();
+    assert_eq!(signal.try_recv(), Ok(()));
+    assert_eq!(signal.try_recv(), Err(TryRecvError::Empty));
+    for _ in 0..2 {
+        assert_eq!(
+            store.poll_control_result(&[], true).unwrap(),
+            Some((
+                ControlVerificationCompletion::Rejected,
+                OutboundAckAdmission::NotEligible
+            ))
+        );
+    }
+    drop(abandoned);
+    assert_eq!(signal.try_recv(), Ok(()));
+    assert_eq!(
+        store.poll_control_result(&[], true).unwrap_err().operation,
+        "control verification result sender disconnected"
+    );
+    assert_eq!(store.poll_control_result(&[], true).unwrap(), None);
+    assert_eq!(store.control_ingress_usage().verifying, 1);
+    store.begin_owner_shutdown();
+    store.finish_owner_shutdown(Ok(())).unwrap();
+    store.close().unwrap();
+}
+
+#[test]
 fn verification_dispatch_returns_when_all_original_slots_are_leased() {
     let workspace = Workspace::new();
     let mut store = workspace.create();

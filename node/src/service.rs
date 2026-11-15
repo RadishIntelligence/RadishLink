@@ -8,11 +8,14 @@ use std::{
     ops::Deref,
     sync::{
         Arc, Mutex,
-        mpsc::{self, RecvTimeoutError, Sender, SyncSender, TrySendError},
+        mpsc::{self, Sender, SyncSender, TryRecvError, TrySendError},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+
+mod verification;
+use verification::VerificationDriver;
 
 pub const COMMAND_CAPACITY: usize = 32;
 
@@ -48,16 +51,19 @@ enum Command {
     Hold(Sender<()>, mpsc::Receiver<()>),
     #[cfg(test)]
     Panic,
+    #[cfg(test)]
+    WithStore(Box<dyn FnOnce(&mut Store) + Send>),
 }
 
 struct AdmissionGate {
     sender: Mutex<Option<SyncSender<Command>>>,
+    wake: SyncSender<()>,
 }
 impl AdmissionGate {
-    /// Taking the sole sender closes admission and wakes an idle receiver without
+    /// Taking the sole sender closes admission and signals the owner without
     /// consuming a slot. Already accepted commands remain readable until disconnect.
     fn close(&self) -> bool {
-        match self.sender.lock() {
+        let poisoned = match self.sender.lock() {
             Ok(mut sender) => {
                 sender.take();
                 false
@@ -66,7 +72,9 @@ impl AdmissionGate {
                 poison.into_inner().take();
                 true
             }
-        }
+        };
+        let _ = self.wake.try_send(());
+        poisoned
     }
 
     fn is_closed(&self) -> bool {
@@ -91,7 +99,7 @@ impl Deref for Service {
 impl Service {
     /// Manual platform clock input; useful before a trusted platform source is available.
     pub fn start(store: Store) -> Result<Self> {
-        Self::start_inner(store, None)
+        Self::start_inner(store, None, None)
     }
     /// Periodic maintenance is independent of UI requests and runs between bounded commands.
     pub fn start_with_clock(
@@ -102,19 +110,22 @@ impl Service {
         if !(Duration::from_millis(100)..=Duration::from_secs(60)).contains(&interval) {
             return Err(Error::new(Code::InvalidInput, "maintenance interval"));
         }
-        Self::start_inner(store, Some((Box::new(source), interval)))
+        Self::start_inner(store, Some((Box::new(source), interval)), None)
     }
     fn start_inner(
         mut store: Store,
         timer: Option<(Box<dyn ClockSource>, Duration)>,
+        mut verification: Option<Box<dyn VerificationDriver>>,
     ) -> Result<Self> {
         let mut report = None;
         if !store.is_time_uncertain() && !store.is_quarantined() {
             report = Some(store.maintain(store.current_clock())?);
         }
         let (sender, receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
+        let (wake, wake_receiver) = mpsc::sync_channel(1);
         let gate = Arc::new(AdmissionGate {
             sender: Mutex::new(Some(sender)),
+            wake,
         });
         let worker_gate = gate.clone();
         let worker = thread::Builder::new()
@@ -134,7 +145,15 @@ impl Service {
                     .as_ref()
                     .map(|(_, interval)| Instant::now() + *interval);
                 let mut failure = None;
+                let mut verification_shutdown = None;
                 loop {
+                    if admission.0.is_closed()
+                        && verification_shutdown.is_none()
+                        && let Some(driver) = &mut verification
+                    {
+                        verification_shutdown =
+                            Some(verification::shutdown(&mut store, driver.as_mut()));
+                    }
                     // Check on every iteration: a busy command queue cannot starve maintenance.
                     if !admission.0.is_closed() && next_tick.is_some_and(|at| Instant::now() >= at)
                     {
@@ -149,18 +168,53 @@ impl Service {
                         }
                         next_tick = Some(Instant::now() + *interval);
                     }
-                    let command = match next_tick {
-                        Some(at) => match receiver
-                            .recv_timeout(at.saturating_duration_since(Instant::now()))
+                    let mut progressed = false;
+                    if let Some(driver) = &mut verification {
+                        if !admission.0.is_closed() {
+                            progressed |= verification::collect(&mut store, driver.as_mut());
+                        }
+                        if !admission.0.is_closed() {
+                            progressed |= verification::dispatch(
+                                &mut store,
+                                driver.as_mut(),
+                                &admission.0.wake,
+                            );
+                        }
+                    }
+                    // If stop arrived during a verification step, fence the Store
+                    // before handling the next queued command.
+                    if verification.is_some()
+                        && verification_shutdown.is_none()
+                        && admission.0.is_closed()
+                    {
+                        continue;
+                    }
+                    let command = match receiver.try_recv() {
+                        Ok(command) => command,
+                        // Stop can also arrive between the gate check and this read.
+                        Err(TryRecvError::Disconnected)
+                            if verification.is_some() && verification_shutdown.is_none() =>
                         {
-                            Ok(command) => command,
-                            Err(RecvTimeoutError::Timeout) => continue,
-                            Err(RecvTimeoutError::Disconnected) => break,
-                        },
-                        None => match receiver.recv() {
-                            Ok(command) => command,
-                            Err(_) => break,
-                        },
+                            continue;
+                        }
+                        Err(TryRecvError::Disconnected) => break,
+                        Err(TryRecvError::Empty) => {
+                            if !progressed {
+                                // Recheck all sources on a coalesced wake or timer deadline.
+                                // A sender signals only after publishing its event.
+                                match next_tick {
+                                    Some(at) => {
+                                        let _ = wake_receiver.recv_timeout(
+                                            at.saturating_duration_since(Instant::now()),
+                                        );
+                                    }
+                                    None => {
+                                        let _ = wake_receiver.recv();
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                     };
                     match command {
                         Command::Diagnostics(reply) => {
@@ -226,7 +280,12 @@ impl Service {
                         }
                         #[cfg(test)]
                         Command::Panic => panic!("controlled state owner failure"),
+                        #[cfg(test)]
+                        Command::WithStore(apply) => apply(&mut store),
                     }
+                }
+                if let Some(result) = verification_shutdown {
+                    result?;
                 }
                 store.close()
             })?;
@@ -280,7 +339,9 @@ impl Client {
         sender.try_send(command).map_err(|e| match e {
             TrySendError::Full(_) => Error::new(Code::Busy, "command queue full"),
             TrySendError::Disconnected(_) => Error::new(Code::Stopped, "state owner unavailable"),
-        })
+        })?;
+        let _ = self.gate.wake.try_send(());
+        Ok(())
     }
     fn request<T>(&self, command: impl FnOnce(Sender<Result<T>>) -> Command) -> Result<T> {
         let (tx, rx) = mpsc::channel();

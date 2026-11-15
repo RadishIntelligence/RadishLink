@@ -117,3 +117,33 @@ Store 把帧读取、解码后和外发交接的有效采样记在同一个运�
 三项合成用例覆盖原 16 槽均在途时的跨线程归还、超额结果释放、同凭据重连及新实例提交、停机后迟到结果、发送端断开、Join 失败与仍连接的空结果位。实际验证工作池、签验和部署时的资源上限仍待验收。
 
 使用缓存的 Rust `1.97.1` 和现有锁文件运行离线全量回归，307 项库测试、2 项 CLI 测试和 1 项字节向量测试通过，库测试用时 185.27 秒。格式、全目标 Clippy、仓库检查和 `git diff --check` 通过。
+
+## 拥有者循环离线收尾（2026-11-15）
+
+在 [Service 状态线程](../../node/src/service.rs)上复用 Store 原有的 kind 2/3 派发、收取和停机入口。合成驱动仅由测试装配。拥有者在有限单元之间检查停止，每轮至多收取一个结果、派发一个任务并处理一个普通命令。空闲时等待一个可合并的唤醒信号或原维护截止时间。命令接纳、结果返回和停止均在各自状态发布后唤醒。唤醒槽只存信号，命令邮箱仍为 32 槽，等待、已派发和未收取的结果仍共用原 16 槽。
+
+停止先关闭命令准入，再由拥有者撤下等待工作并保留原在途租约。合成驱动按实际需关闭的实例确认关闭并给出 Join 结果。拥有者收取期间已经返回的结果，再用原 Store 停机合同决定能否关闭。失联发送端各报告一次，只有确认 Join 成功才允许回收其未返回的租约。Join 失败时，已归还的租约正常结清，其他租约不按成功回收，旧活动继续受停止闩锁约束。状态线程退出后，未确认停机的 Store 沿原故障路径保留 SQLite 和拥有者锁至进程退出。
+
+| 验收项 | 合成结果 |
+| --- | --- |
+| 满额停机 | 16 个验证租约在途时第 17 项返回 `QueueFull`。将 32 槽命令邮箱填满，新请求先返回 `Busy`，关门后返回 `Stopped`。合成线程在停机期间归还全部 16 个结果并实际 Join。拥有者收取结果、排空已接纳查询，锁可重新取得，持久对象和 ACK 均为零 |
+| 独立唤醒、重复与旧实例 | 单槽合并多个唤醒，结果仍可逐份收取。同一来源已排队的重复输入不会派发第二次。旧实例结果返回 `Conflict`，只释放旧租约。当前实例插入一个对象并排入一个 ACK；另一邻居随后返回同一对象时只合并，不增对象或 ACK。结果发送端由租约独占并在归还时消费 |
+| 明确失败与提交未知 | 注入提交前失败和提交后响应丢失，分别保留 `StoreUnavailable / test before commit` 和 `OutcomeUnknown / test lost commit response`。既有隔离阻止下一在途结果提交，无 ACK。重开查询分别得到零个和一个持久对象 |
+| Join 失败 | 注入带底层错误的 Join 失败。在停机期间收回一份迟到结果，保留一份失联租约和一份仍连接租约。活动启用返回 `Stopped`，重开返回 `Busy`，停止向调用方返回原错误及其 source。状态线程退出后，仍连接的发送端再尝试归还会得到 `Stopped` |
+
+在 macOS arm64 使用缓存的 Rust `1.97.1` 和原锁文件复验。命令在仓库根执行。
+
+```bash
+export RUSTUP_AUTO_INSTALL=0 CARGO_TARGET_DIR="$PWD/.cache/node/target"
+cargo +1.97.1 fmt --manifest-path node/Cargo.toml -- --check
+cargo +1.97.1 test --offline --locked --manifest-path node/Cargo.toml --lib service::
+cargo +1.97.1 test --offline --locked --manifest-path node/Cargo.toml --lib verification_dispatch
+cargo +1.97.1 clippy --offline --locked --manifest-path node/Cargo.toml --all-targets -- -D warnings
+cargo +1.97.1 test --offline --locked --manifest-path node/Cargo.toml --quiet
+./scripts/check-repo.sh
+git diff --check
+```
+
+定向离线回归通过 Service 12 项与验证派发 4 项。最终全量回归通过 312 项库测试、2 项 CLI 测试和 1 项字节向量测试，库测试用时 168.15 秒。格式、全目标 Clippy、仓库检查和差异检查通过。开发时首次定向编译退出 101，测试断言用 `i64` 比较 `u64` 对象计数，修正用例后复验通过。
+
+本证据覆盖合成输入经过实际状态线程的顺序、逻辑容量、错误路径和关闭状态。真实网络、签验、工作池、部署环境资源硬上限和停机时限仍待分别验证。

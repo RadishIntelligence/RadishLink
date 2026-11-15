@@ -5,9 +5,11 @@ use crate::store::tests::{Workspace, clock, send};
 #[test]
 fn stop_signal_disconnects_full_mailbox_without_a_command_slot() {
     let (sender, receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
+    let (wake, _wake_receiver) = mpsc::sync_channel(1);
     let client = Client {
         gate: Arc::new(AdmissionGate {
             sender: Mutex::new(Some(sender)),
+            wake,
         }),
     };
     let (reply, _reply_rx) = mpsc::channel();
