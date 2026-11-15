@@ -31,7 +31,7 @@ I1–I5-I 已提交并通过有限离线验证；容量核验和受限双构建 
 - 首期为 3–5 人熟人小队入场前配对，交换短文字、状态与按键通话；一次白天 6–8 小时活动、当天可充电，首台允许背包携带，均为设计目标。2026-10-24 按所有者授权采用[使用量与携带规划值](../product-definition.md#使用量与携带规划基线2026-10-24)，不是实测或正式 profile 参数。首期地区为上海。整套目标 2000–3000 元、累计硬上限 3000 元。无可复用设备，累计支出基线 0 元。首轮完整三节点暂缓功率计，已给价小计 1824 元，评审上限 2000 元。实际到手额与合法无线配置待确认。见[HW1 预算复核](../hardware/poc-purchase-list.md#hw1-决策成本复核2026-11-15)。
 - 硬件按三台 Linux 有线台架、单台交互 Demo 顺序推进；无可复用设备，优先评估 Radxa ZERO 3E 2GB 全新增方案，未冻结或采购。许可证先评审所有者控制的 Linux ARM64 合成实验且暂不对他人交付，优先推进固定 mls-rs 0.56.0；两包处置与未来渠道仍须分别评审。
 - 原创内容采用根目录 `LICENSE` 的 `RadishLink Source-Available License 1.0`，不是开放源码许可证。
-- 串行普通开发在 `dev`，`master` 为默认稳定主线；主题分支与 PR 适用条件见[仓库治理](../governance/repository-governance.md)。远程 Ruleset、合并选项和私密漏洞入口的既有核对记录不等于本轮实时复核。
+- 串行普通开发在 `dev`，`master` 为默认稳定主线；主题分支与 PR 适用条件见[仓库治理](../governance/repository-governance.md)。2026-11-15 公开仓库迁至 [RadishIntelligence/RadishLink](https://github.com/RadishIntelligence/RadishLink)。迁移后复核了[分支保护与合并选项](../../.github/rulesets/README.md#radishlink-远程实例状态)，私密漏洞报告保持启用。同日恢复迁移前的管理员 PR 内绕过、Secret Scanning 和 Push Protection，三项均通过 API 回读核对。
 
 ## 各证据轨状态
 
@@ -105,7 +105,7 @@ Store 已按实例实现两步关闭，并离线接入帧组装、读取额度�
 2. [SW-G2 首份评审材料](../security/e2ee-sw-g2-decision-package.md#首份评审材料及复制边界2026-11-08)已固定仓库内的输入、摘要与复制边界，第三方材料仍留原处。下一步由所有者分别落实 `debug_tree` 已冻结澄清请求的公开账号与逐字预审，以及 `r-efi` 独立法律评审者和具体材料范围。专业意见、新证据与实际产物的复制/留存清单未完成，R2 与 Phase B 继续停止。
 3. [Node 安全接入与 Linux ARM64 验收准备](../testing/node-security-integration-acceptance.md)已覆盖 T-C/T-D 提交两侧退出的合成恢复核对，并明确首次信任、签验、撤销、联合事务和接线用例。实际安全用例未执行；下一次接线评审须补可用 HW1、固定逐跳适配层、可信时间和硬资源/时限/关闭证据。继续区分 HW1 与 I5 宿主资源门。
 4. I5 后续先满足[路线 A 宿主资源门](../testing/sw-g4-synthetic-i5-linux-host-assessment.md)，不把当前 Mac/UTM 改名或增加 guest 配额当作达标。资源条件变化后复核完整准备预算、真实输入与可信基座，冻结真实 FD loader、非 UTM 控制面和新版执行合同，再另行授权实现、原生环境验收及验签/APT。安装、冷构建、daemon/store 计费和正式 21 样本 I5-R 仍各有前置；不直接创建满额四盘后安装，不在域外先构建。V0 历史合同与 SW-G2 安全门不变。
-5. [T0 离线测试](../governance/repository-governance.md#已有工具的质量入口演进)和[实验前置脚本检查](../governance/repository-governance.md#实验前置脚本的离线检查)已接入本地 PR workflow 并汇入 `Candidate Quality`，覆盖 Node G0 固定输入、I5 资源自测和相关 shell 语法。远程运行待验证。后续按实际需求维护重复实验职责，并继续推进全新增硬件及能量/体积/成本预算。
+5. [T0 离线测试](../governance/repository-governance.md#已有工具的质量入口演进)和[实验前置脚本检查](../governance/repository-governance.md#实验前置脚本的离线检查)已接入 PR workflow 并汇入 `Candidate Quality`，覆盖 Node G0 固定输入、I5 资源自测和相关 shell 语法。迁移后在 `dev` [手动调度 PR Checks](https://github.com/RadishIntelligence/RadishLink/actions/runs/43704563195)，三个检查与聚合 job 均通过。后续按实际需求维护重复实验职责，并继续推进全新增硬件及能量/体积/成本预算。
 
 ## 关键风险
 

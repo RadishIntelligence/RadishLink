@@ -41,6 +41,8 @@
 
 ## RadishLink 远程实例状态
 
+2026-11-15，公开仓库原名迁至 [RadishIntelligence/RadishLink](https://github.com/RadishIntelligence/RadishLink)。迁移后 API 回读确认 `master` 仍为默认分支，原 [Ruleset 21044033](https://github.com/RadishIntelligence/RadishLink/rules/21044033) 仍为 `active`，继续要求 PR、解决会话和 strict `Candidate Quality`，并禁止删除与 non-fast-forward 更新。合并方式仍为 merge commit 与 rebase merge，`dev` 无生效规则。迁移清除了原管理员绕过条目。同日按所有者授权恢复该条目，API 回读确认管理员 RepositoryRole 的绕过模式为 `pull_request`。
+
 截至 2026-08-19，`laugh0608/RadishLink` 已完成以下远程配置并通过 API 回读复核：
 
 - GitHub 默认分支为 `master`，远程同时存在 `master` 与 `dev`；

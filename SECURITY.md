@@ -4,7 +4,7 @@ RadishLink 涉及设备身份、端到端加密、无线中继、升级和用户
 
 ## 私下报告
 
-远程仓库已启用 [GitHub Private Vulnerability Reporting](https://github.com/laugh0608/RadishLink/security/advisories/new)，请使用该私密报告入口提交安全漏洞。若该入口不可用，请先通过仓库所有者的 GitHub 资料页请求建立私密联系渠道，不要在首次公开消息中附带漏洞细节。
+远程仓库已启用 [GitHub Private Vulnerability Reporting](https://github.com/RadishIntelligence/RadishLink/security/advisories/new)，请使用该私密报告入口提交安全漏洞。若该入口不可用，请先通过仓库所有者的 GitHub 资料页请求建立私密联系渠道，不要在首次公开消息中附带漏洞细节。
 
 报告尽量包含：
 
