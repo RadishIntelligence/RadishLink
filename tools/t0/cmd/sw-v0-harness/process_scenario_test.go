@@ -146,7 +146,7 @@ func (r *memoryRunner) Start(_ context.Context, name string, args ...string) (co
 	r.actors[node] = n
 	return &actorPeer{actor: n}, nil
 }
-func memoryBundle(t *testing.T, id, sub string, repeat int) harness.NetworkBundle {
+func memorySample(t *testing.T, id, sub string, repeat int) (*processSample, *memoryRunner, harness.NetworkManifest) {
 	t.Helper()
 	p, err := harness.CanonicalNetwork(id)
 	if err != nil {
@@ -158,7 +158,16 @@ func memoryBundle(t *testing.T, id, sub string, repeat int) harness.NetworkBundl
 	if err = s.prepare(); err != nil {
 		t.Fatal("prepare", err)
 	}
-	if err = s.drive(); err != nil {
+	profiles, _ := harness.NetworkProfiles()
+	size, _ := p.Subcase(sub)
+	m := harness.NetworkManifest{Schema: 3, Observation: 1, Batch: "fixture-batch", Run: run, Evidence: fmt.Sprintf("fixture-batch/%s/%s/%d", id, sub, repeat), Repeat: int64(repeat), ProfileID: id, ProfileVersion: p.Version, Seed: p.Seed, Variant: p.Variant, Subcase: sub, Mode: p.Mode, Security: p.Security, GitRevision: strings.Repeat("b", 40), GoVersion: "fixture", OS: "fixture", Arch: "fixture", Started: "2026-09-26T00:00:00Z", Ended: "2026-09-26T00:00:01Z", Topology: p.Topology, Size: size.Size, Count: 1, Window: 30000, Control: 1, Transport: p.Transport, FaultLayer: p.FaultLayer, HostBinary: strings.Repeat("c", 64), NodeBinary: strings.Repeat("d", 64), Image: s.image, DockerClient: "fixture", DockerServer: "fixture", DaemonOS: "linux", DaemonArch: "arm64", Contract: strings.Repeat("e", 64), Profiles: profiles}
+	return s, r, m
+}
+
+func memoryBundle(t *testing.T, id, sub string, repeat int) harness.NetworkBundle {
+	t.Helper()
+	s, r, m := memorySample(t, id, sub, repeat)
+	if err := s.drive(); err != nil {
 		t.Fatal("drive", err)
 	}
 	res, err := s.cleanup()
@@ -168,9 +177,6 @@ func memoryBundle(t *testing.T, id, sub string, repeat int) harness.NetworkBundl
 	if len(r.objects) != 0 {
 		t.Fatal("residual fake objects")
 	}
-	profiles, _ := harness.NetworkProfiles()
-	size, _ := p.Subcase(sub)
-	m := harness.NetworkManifest{Schema: 3, Observation: 1, Batch: "fixture-batch", Run: run, Evidence: fmt.Sprintf("fixture-batch/%s/%s/%d", id, sub, repeat), Repeat: int64(repeat), ProfileID: id, ProfileVersion: p.Version, Seed: p.Seed, Variant: p.Variant, Subcase: sub, Mode: p.Mode, Security: p.Security, GitRevision: strings.Repeat("b", 40), GoVersion: "fixture", OS: "fixture", Arch: "fixture", Started: "2026-09-26T00:00:00Z", Ended: "2026-09-26T00:00:01Z", Topology: p.Topology, Size: size.Size, Count: 1, Window: 30000, Control: 1, Transport: p.Transport, FaultLayer: p.FaultLayer, HostBinary: strings.Repeat("c", 64), NodeBinary: strings.Repeat("d", 64), Image: s.image, DockerClient: "fixture", DockerServer: "fixture", DaemonOS: "linux", DaemonArch: "arm64", Contract: strings.Repeat("e", 64), Profiles: profiles}
 	return s.bundle(m, res)
 }
 func TestProcessActorByteStreams(t *testing.T) {
@@ -179,12 +185,12 @@ func TestProcessActorByteStreams(t *testing.T) {
 		for _, sub := range p.Subcases {
 			t.Run(id+"/"+sub.ID, func(t *testing.T) {
 				b := memoryBundle(t, id, sub.ID, 1)
-				m, _, result, err := harness.AssessNetwork(b)
-				if err != nil || result != "PASS" {
-					t.Fatalf("contract fixture: %s %v %+v", result, err, m)
-				}
-				if m.Ingress != m.Written {
-					t.Fatal("unpaired frames")
+				for _, observation := range []int64{1, harness.NetworkObservationVersion} {
+					b.Manifest.Observation = observation
+					m, _, result, err := harness.AssessNetwork(b)
+					if err != nil || result != "PASS" || m.Ingress != m.Written {
+						t.Fatalf("observation %d: %s %v %+v", observation, result, err, m)
+					}
 				}
 			})
 		}
@@ -251,7 +257,7 @@ func TestSupervisorCommandRestrictions(t *testing.T) {
 	}
 }
 func TestScenarioTimingUsesNextEvent(t *testing.T) {
-	if got := scenarioNext(1, map[string]harness.ObservedState{}, []int64{51}, -1, -1); got != 51 {
+	if got := scenarioNext(1, map[string]harness.ObservedState{}, []int64{51}, -1, -1, 5000); got != 51 {
 		t.Fatal(got)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)

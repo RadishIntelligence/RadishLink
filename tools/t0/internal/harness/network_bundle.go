@@ -59,7 +59,7 @@ func checkNetworkManifest(p NetworkProfile, m NetworkManifest) error {
 	if err != nil {
 		return err
 	}
-	if end.Before(start) || !strings.HasSuffix(m.Started, "Z") || !strings.HasSuffix(m.Ended, "Z") || m.Schema != 3 || m.Observation != 1 || m.ProfileID != p.ID || m.ProfileVersion != p.Version || m.Seed != p.Seed || m.Variant != NetworkVariant || m.Mode != NetworkMode || m.Security != "synthetic" || m.Topology != CanonicalTopology || m.Size != sub.Size || m.Count != 1 || m.Window != 30000 || m.Control != 1 || m.Transport != NetworkTransport || m.FaultLayer != NetworkFaultLayer || m.Repeat < 1 || m.Repeat > 3 {
+	if end.Before(start) || !strings.HasSuffix(m.Started, "Z") || !strings.HasSuffix(m.Ended, "Z") || m.Schema != 3 || (m.Observation != 1 && m.Observation != NetworkObservationVersion) || m.ProfileID != p.ID || m.ProfileVersion != p.Version || m.Seed != p.Seed || m.Variant != NetworkVariant || m.Mode != NetworkMode || m.Security != "synthetic" || m.Topology != CanonicalTopology || m.Size != sub.Size || m.Count != 1 || m.Window != 30000 || m.Control != 1 || m.Transport != NetworkTransport || m.FaultLayer != NetworkFaultLayer || m.Repeat < 1 || m.Repeat > 3 {
 		return errors.New("network manifest contract")
 	}
 	if !validHexDigest(m.HostBinary, 64) || !validHexDigest(m.NodeBinary, 64) || !validHexDigest(m.Contract, 64) || !validHexDigest(m.GitRevision, 40, 64) || m.Dirty || !validHexDigest(strings.TrimPrefix(m.Image, "sha256:"), 64) || !validHexDigest(m.ProfileHash, 64) || !validHexDigest(m.EventsHash, 64) || !validHexDigest(m.ExecutionHash, 64) || m.Batch == "" || m.Run == "" || m.Evidence != fmt.Sprintf("%s/%s/%s/%d", m.Batch, p.ID, m.Subcase, m.Repeat) || m.DockerClient == "" || m.DockerServer == "" || m.GoVersion == "" || m.OS == "" || m.Arch == "" || m.DaemonOS != "linux" || !slices.Contains([]string{"amd64", "arm64"}, m.DaemonArch) {
@@ -109,7 +109,7 @@ func writeNetworkBundle(root string, b NetworkBundle, budget *NetworkWriteBudget
 		return err
 	}
 	m := &b.Manifest
-	m.Schema, m.Observation = 3, 1
+	m.Schema = 3
 	m.ProfileHash = scenarioDigest(profile)
 	m.EventsHash = scenarioDigest(events)
 	m.ExecutionHash = scenarioDigest(execution)

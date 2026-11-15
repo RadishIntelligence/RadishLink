@@ -7,3 +7,9 @@ ADR 记录已经接受并会长期影响实现的架构选择。研究候选、�
 | [0001](0001-radio-and-host-baseline.md) | 主机、长距无线与近距接入基线 | Accepted |
 | [0002](0002-underlay-overlay-separation.md) | 分离无线承载层与 RadishLink 覆盖层 | Accepted |
 | [0003](0003-branch-pr-and-ruleset-governance.md) | 分支、PR 与 Ruleset 治理 | Accepted |
+| [0004](0004-node-service-foundation.md) | Node 服务、事务与本地数据基线 | Accepted |
+| [0005](0005-node-security-integration.md) | Node 安全接入、撤销与证据寿命 | Accepted |
+| [0006](0006-node-identity-and-control-profile.md) | Node 活动身份与控制证明 profile | Accepted |
+| [0007](0007-node-envelope-and-control-budget.md) | Node 数据 envelope 与控制传播预算 | Accepted |
+| [0008](0008-node-activity-lifecycle.md) | Node 活动作用域与有界归档 | Accepted |
+| [0009](0009-node-clock-domains.md) | Node 跨 boot 时钟域与新活动 | Accepted |

@@ -5,6 +5,12 @@
 - 适用 gate：`SW-G2`
 - 前置决策：`SW-G0/SW-G1` 已接受
 
+## 当前处置批次的出口（2026-11-10）
+
+近期只收口固定 mls-rs 候选的已有两项处置：由所有者落实 debug_tree 的公开账号与冻结请求逐字预审、r-efi 的独立评审者与材料范围，并约定结果留存和复核点。沿现有 R1d/R2 接受条件处理证据，不重复取得已匹配材料。缺账号、评审者或适用意见时标记等待，不能以继续开发替代处置。
+
+本批以“可按既有条件进入下一门”“有具体理由改选”或“缺明确输入而等待”结束。改选须另定一个有范围的候选评审，不并行发展多套密码实现；尚未关闭的许可证、R2、Phase B、安全适配及运行条件保持。规划收口不构成法律意见、第三方联系授权或候选接受。
+
 ## 目的与结论边界
 
 本文把[端到端加密候选评审](e2ee-candidate-review.md)收敛为可执行、可停止、可比较的 `SW-G2` 决策包。它只确定候选验证顺序、共同问题、证据要求和授权边界，不选择生产实现，不冻结密码套件、credential、线格式、存储或 FFI，也不构成法律意见。
@@ -216,3 +222,146 @@ RFC 9750 的 [AS/DS 架构与投递说明](https://www.rfc-editor.org/rfc/rfc975
 后续安全适配的首批验收仍按本包既有要求：A/C 通信的纯中继 B 不可解密；密码状态、队列与送达确认在崩溃恢复时一致；重放、身份变化、分区并发、撤销及 relay-clear proof 有明确成熟机制。B 在其他会话作为合法端点的角色不与纯中继负例混同。手机离开不退出 Node 会话，未来独立手机身份不能靠复制 Node 私钥或静默同步历史实现。
 
 近期可交接材料为固定对象证据索引、当前使用范围、两包各自的待判断问题和已冻结澄清全文；专业评审者、公开发送账号及精确执行包尚待指定。本次未联系上游或专业方、未安装依赖、未变更 lockfile/gate、未进入 R2/Phase B；不设自动监控或虚构回复期限。
+
+## 内部 Linux ARM64 实验评审输入（2026-10-24）
+
+状态：**输入整理完成，许可证、复核及候选运行仍未放行。** 本节面向后续工程/法律评审者，将可从现有代码确定的项与未来产物假设分开；不产生新的许可证意见，不重判 R1c-R/R1d-L，不修改固定执行合同或选择产品密码实现。
+
+### 已核对输入与拟议产物
+
+本次只读核对仓库 manifest、lockfile、stub 与 runner，没有执行 Cargo、Docker、依赖审计或历史 evidence 重验。以下代码链接是当前事实入口，历史证据身份继续引用原专题：
+
+| 输入 | 当前事实 / 本次提案 | 仍待关闭 |
+| --- | --- | --- |
+| 使用者与数据 | 沿用所有者控制、仅合成输入、暂不向其他人交付镜像/安装包的范围 | 未来操作包需指明执行人、环境与权限；不把协作者自动算作获准接收者，不使用真实通信或密钥 |
+| target | [现有 runner](../../scripts/run-sw-g2-mls-rs-spike.sh)已使用 `cargo fetch --locked --target aarch64-unknown-linux-gnu`；历史容器平台为 `linux/arm64` | 下轮内部原生候选构建建议沿用此 triple；ARM64 板名本身不证明 ABI、libc、toolchain 或运行环境匹配 |
+| manifest / feature | [Cargo.toml](../../tools/spikes/sw-g2-mls-rs/Cargo.toml)：`mls-rs =0.56.0`，关闭 defaults，显式 `std/private_message/out_of_order/prior_epoch/tree_index`；AWS-LC `=0.25.0/non-fips`，SQLite `=0.23.0/sqlite-bundled` | 其余依赖及传递 feature 以 manifest 和[固定基线](../testing/sw-g2-mls-rs-phase-a-authorization.md#固定基线)为准，不复制出第二套 allowlist，不变更版本/provider |
+| 固定依赖图 | 本次仓库 lockfile 计数 94；SHA-256 为 `c6dfaaf0e89a580cbe7ae613fd3f05f2fc1f1b53eee1aff8b615ee50f9ca50c7`，与既有 D2 记录相符 | 这只复核当前文件，未重新验证 D2/R1 原始证据；目标裁剪后的编译图不等于跨目标 lock 中全部包都进入 binary |
+| 工具链 | 现行 Phase A 合同固定 `rust/cargo 1.96.1` 与 Bookworm image digest，详见原合同 | 下一构建包须重新确认供应链状态、链接工具、原生构建依赖及目标 libc；不把历史准备环境直接当 Phase B 执行授权或可用宿主 |
+| 当前代码能力 | [main.rs](../../tools/spikes/sw-g2-mls-rs/src/main.rs)始终退出 2；只有 manifest/lock/拒绝 stub | 当前没有候选 E2EE 测试程序。不能编译这个 stub 后报告密码构建/适配通过；Phase B 的具体实现和验收先单独评审 |
+| 未来最小产物候选 | 仅 Linux ARM64 内部实验 executable、合成测试 evidence、实际目标依赖清单、第三方材料清单与摘要；不制作产品镜像或对外安装包 | 是拟议范围，不是已生成产物。动态/静态链接组成、实际库文件、SBOM/包清单须以未来构建结果核对 |
+| source / archive / cache / vendor | 历史固定图准备涉及归档与解包源码；新环境若复制它们，均列为内部评审对象，不能因为不对外发包而忽略 | 下轮逐对象冻结输入、存放、复制、留存和移交范围。是否生成 vendor/build cache、是否留在交付容器或设备上尚未确定，未知不作排除 |
+| 评审材料移交 | 当前先交接文档索引和对象标识；不自动附带 `.crate`、完整 source/cache、二进制或镜像 | 若需向评审者复制第三方 payload，先明确接收人和具体材料范围；本次未发送材料 |
+
+为了让构建范围可以审阅，后续候选命令形态可限定为下式，**仅为设计文本，当前禁止执行**：
+
+```text
+cargo build --frozen --release --target aarch64-unknown-linux-gnu --manifest-path tools/spikes/sw-g2-mls-rs/Cargo.toml --bin radishlink-sw-g2-mls-rs-spike
+```
+
+该形态只提出目标、profile、bin 和固定图消费；运行前还必须有获审实现 revision、已准备且来源有效的依赖、独立 CARGO_HOME/target 路径、准确 artifact 清单、网络/资源/时间/清理边界及当前任务授权。`--frozen` 不负责准备工具或补齐来源；不可为命令成功自动 fetch、安装、联网或复用旧 `.work`。当前 stub 不是上述未来实验程序，命令本身不构成 Phase B 设计完成。
+
+### 两包分流的具体交接问题
+
+| 对象 | 固定证据入口 | 本轮整理出的待判断问题 | 下一步与完成条件 |
+| --- | --- | --- | --- |
+| `debug_tree 0.4.0` | [R1d-L](../testing/sw-g2-mls-rs-license-disposition-review.md#debug_tree-040-处置)、[已冻结上游澄清合同](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#冻结对象与已知缺口)；当前 std 配置使其进入 resolved graph | 缺适用于固定历史源码的完整 MIT notice/holder；Cargo 作者不直接当 copyright holder；不自行补模板 | 复用现有逐字消息与 helper，无需新写一套 Issue。所有者先指定公开账号并预审文本；另行授权 X 后发送，回复收集 R 与接受性再分别处理；本次均未执行 |
+| `r-efi 6.0.0` | [R1d-L](../testing/sw-g2-mls-rs-license-disposition-review.md#r-efi-600-处置)及原 R1c mapping；既有记录说明 AUTHORS 包含完整 MIT 文本，normal edge 有 UEFI 条件 | 对本节内部使用及实际复制的 archive/source/cache，是否接受选择 MIT alternative，需保留的完整 AUTHORS/归属及具体条件是什么；目标 binary 排除与材料复制应分别判断 | 所有者指定合格且独立的法律评审者并确认材料范围；意见有效后才设计 R1d-G/R1d-D 或其他新证据轨。不能由 `aarch64-unknown-linux-gnu` 单独推出整包不适用 |
+
+交接应包含本节范围表、固定 manifest/lock 标识、R1c-R/R1d-L 的原证据索引、两包各自的问题与已有澄清合同；评审结论须绑定具体对象、渠道、假设和限制。R2 仍要求新证据轨有效完整通过及所有者指定符合条件的非实现者，不用本次输入整理代替专业意见或 R2。
+
+### 安全设计的后续审阅顺位
+
+继续沿现有[文字闭环事务与验收矩阵](../architecture/minimal-text-slice.md#最小验收矩阵)，下一轮先审三个用户结果：首次配对能识别身份并拒绝未授权界面；手机离开或被撤销后 Node 会话及权限表现明确；提交中崩溃后安全状态、消息队列和送达/清理责任一致。每项都需映射到成熟机制、候选库实际 API、持久提交点和负例，无法映射时明确回到 SW-G1/SW-G2 评审，不自行拼装密码协议。
+
+本次没有改变首次信任、撤销、事务或 proof 的安全决定，没有发送上游消息、接收回复、创建新 R1 evidence、安装/构建候选或联系专业方。输入已更具体，但 R2、Phase B 和 SW-G2 仍为未通过状态。
+
+## 首份评审材料及复制边界（2026-11-08）
+
+本轮固定的是**仓库内只读评审输入**。维护者在现有工作区核对下列文件和证据索引，按原路径引用。新增第三方文件副本、候选产物与外部交付均为零，历史留存不迁移、不清理。核对基线为 `f0fa045018e150245eb9df01f078600f59a30d95`，本轮复算了 `tools/spikes/sw-g2-mls-rs/` 下的 manifest、lock 和拒绝 stub。
+
+| 对象 | SHA-256 |
+| --- | --- |
+| `Cargo.toml` | `82fa10b4985273e4edcd54451432144711981f599be0ec090496a898cfdc7fe0` |
+| `Cargo.lock` | `c6dfaaf0e89a580cbe7ae613fd3f05f2fc1f1b53eee1aff8b615ee50f9ca50c7` |
+| `src/main.rs` | `c34d2d22b69bfbaca6ee27e52aa652d4cd86f22e33e48777367e968bc106e18c` |
+
+| 对象 | 当前留存和评审范围 | 下一份执行包须补的字段 |
+| --- | --- | --- |
+| 仓库输入及评审索引 | 原路径留存上述三文件、本节及 R1c-R/R1d-L 和 X/R 合同的引用。交接内容限于这些引用、对象标识、摘要及待答问题；本轮未交付 | 所有者指定接收人、渠道与可阅范围。需要实际材料时逐文件审批，记录来源、摘要、接收端路径及留存终点 |
+| 既有 registry 归档、解包源码及原始取证 | 依原 D2/R1 合同留在原 evidence 根，本轮不复制 `.crate`、`AUTHORS` 正文、原始响应或缓存 | 逐对象说明在独立 ARM64 运行根是否必需、来自哪个已核验对象、谁可读、何时清理。两个包都要核对 target 外的输入复制 |
+| 未来 source/cache/vendor/build scratch | 本轮未创建、未转移；单独列出归档、解包源码、vendor、registry 与 build cache，不能将未决定的类别记为排除 | 列出实际写入目录、硬上限、保留者与退出时动作。默认提交评审的方案仅保留经核验的证据，不将整套 scratch 随二进制交付；复现或许可证留存例外须逐对象批准 |
+| 未来 ARM64 产物 | 当前无候选 executable、库、镜像或安装包。首个候选包只评审内部合成试验用 executable、链接/依赖清单、材料清单和证据 | 绑定确切运行根、所有者控制的使用者、每个输出及摘要、链接组成和保留终点；区分设备上最终内容与准备环境曾经复制的内容。未定即停止，不填推定的留存期限 |
+
+两份评审请求各自绑定[固定 package、checksum 和 commit](../testing/sw-g2-mls-rs-license-notice-review.md#r0-离线许可证缺口盘点)。`debug_tree` 由所有者指定公开账号并预审[已冻结的逐字 X 请求](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md)，材料是固定对象的适用 MIT 正文、holder、第三方例外和可核验回复身份。X 与 R 分别授权，回复接受后才能准备新证据。`r-efi` 由所有者指定有资格的独立法律评审者，首份材料为固定对象与 `AUTHORS` 的来源/摘要、上表范围及 R1d-L 的 UEFI 依赖边证据，具体待答是内部 Linux ARM64 用途中实际复制各类别时是否可选 MIT、完整 `AUTHORS` 的留存和随附条件。当前材料只含索引；如评审需要原文或源码，先补接收人与逐对象范围。实际目标 binary 和副本清单均未生成，不能以 target 推定其内容。
+
+法律评审与[非实现者 R2](../testing/sw-g2-mls-rs-license-notice-review.md#r2-非实现者复核)的负责人均待指定；R2 另以有效完整的新证据为进入条件。本轮没有外部发送、补证、候选运行或 gate 状态变动。Node 新产品图另走 [G1/G2](../testing/node-security-graph-review-package.md)，实际功能与接线按 [Node 安全接入验收](../testing/node-security-integration-acceptance.md)分别取证。
+
+## 许可证评审交接准备（2026-11-15）
+
+首轮评审限定为所有者控制的 Linux ARM64 合成实验，当前使用范围暂不向他人交付测试镜像或安装包。拟议目标 `aarch64-unknown-linux-gnu` 及固定 feature 组合以现有评审输入为依据。评审先使用对象标识、摘要、来源索引和问题清单。第三方文件和原始取证保存在原目录，材料接收和复制范围由所有者确认。
+
+### 固定对象复核
+
+| 对象 | 本次只读核对 | 可交评审的事实 |
+| --- | --- | --- |
+| D2 与 R1c-R | D2 和 R1c-R 的 manifest、checksum 清单及所列 32 和 69 项分别核对。历史 D2 一开始用当前 `LICENSE` 对比得到差异，改用其固定 revision `64cf079a7b14a3ce90be92b93e56e2ad80555d80` 的原输入后全部匹配。D、D2 和仓库三份 lockfile 逐字一致，均为 94 个 package | D2 保留 `PASS/phase-a-prepared`。R1c-R 保留 `STOP/license-evidence`。[固定 D2 基线](../testing/sw-g2-mls-rs-license-notice-review.md#固定-d2-基线) · [R1d-L 完整性复核](../testing/sw-g2-mls-rs-license-disposition-review.md#冻结输入与完整性复核) |
+| `debug_tree 0.4.0` | 保留的 `.crate` SHA-256 与 lock/原 mapping 相同，包内 VCS 指向 `5b709de2d8872102b20b566c408d31d0662d7a9f`。D2 的 `mls-rs/std` 启用该依赖，边无 target 条件 | 固定源码仍缺适用的完整 MIT notice、holder/年份及第三方例外说明。[冻结对象](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#冻结对象与已知缺口) |
+| `r-efi 6.0.0` | 保留的 `.crate` SHA-256 与 lock/原 mapping 相同，包内 VCS 指向 `7e1b0322d31d625f81a5656096330934f9cd835d`。`AUTHORS` 在归档、R1c decoded 文件及固定 blob 中逐字一致，SHA-256 为 `d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111` | `AUTHORS` 包含完整 MIT 文本及归属。D2 中唯一依赖边来自 `getrandom 0.4.3`，条件为 `cfg(all(target_os = "uefi", getrandom_backend = "efi_rng"))`。目标二进制、构建期复制品和留存材料需分别核对。[固定包校验值](../testing/sw-g2-mls-rs-license-notice-review.md#r0-离线许可证缺口盘点) · [处置评审](../testing/sw-g2-mls-rs-license-disposition-review.md#r-efi-600-处置) |
+
+### debug_tree 公开 Issue 预审
+
+唯一拟发送目标为 `martypapa/debug-tree` 的 GitHub Issues。冻结标题为 `License notice clarification for debug_tree 0.4.0`。预审应使用[冻结标题和正文](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#冻结标题)；正文询问固定发布的完整 MIT notice、holder/年份、第三方例外及追溯适用，并请求官方仓库中的不可变引用。
+
+[离线 helper 检查](../../scripts/check-sw-g2-mls-rs-license-upstream-clarification.sh)及针对准备基线 `65d11be1964d6785f0cd8597ada79af45f85beb3` 的[本地 preflight](../../scripts/run-sw-g2-mls-rs-license-upstream-clarification.py)均通过，已核对冻结文档、逐字消息摘要和 R1c 对象。进入下一轮前，所有者需给出对外显示的 GitHub login 并逐字确认标题与正文。实际发帖需对届时洁净的 revision 和唯一目标取得一次性 X 授权，再由原合同检查登录身份、仓库、固定 commit、Issues 可用性和等价条目。回复收集 R 及接受性另按原合同处理。[外部写入合同](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#外部写入合同) · [回复接受标准](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#回复接受标准)
+
+### r-efi 独立法律评审请求草稿
+
+> 请评估 `r-efi 6.0.0` 在 RadishLink 所有者控制的 Linux ARM64 合成实验中的许可选项。评审对象以本节固定 commit、crate checksum 和 `AUTHORS` 摘要为准。D2 的跨目标依赖图包含本包，记录的依赖边仅适用于特定 UEFI 配置。当前尚无目标二进制、SBOM 或实际复制清单。
+>
+> 1. 如果最终 Linux ARM64 二进制的构建图、链接清单和包内容均排除本包，针对该二进制及其预期使用范围，请说明结论与所需证明。
+> 2. 如果准备、构建或复现过程中会复制或留存 `.crate`、解包源码、vendor、含本包的 registry/build cache 或容器内容，请按实际类别分别判断是否可以选择 MIT 分支。请明确完整 `AUTHORS` 的保留或随附方式、归属、NOTICE 及对修改副本的要求。
+> 3. 请注明适用对象、渠道、假设与限制，并列出必须补的证据。如果现有事实只支持条件性意见，请明确触发条件。如果不能接受该 MIT 路线，请指出缺少的官方材料或需调整的范围。
+
+所有者先指定独立法律评审者、私下交接渠道和材料范围。首份交接使用本节、固定依赖边及 `AUTHORS` 来源/摘要索引。若评审者需要查阅原文或归档，再逐项确认可阅或可复制材料和留存安排。工程侧仍需补实际操作者、目标与构建方式、artifact 以及归档、源码、vendor、cache 和镜像的实际复制/保留清单。可先就列明的假设取得条件性意见，实际产物与假设一致后再确认适用范围。[首份评审材料及复制边界](#首份评审材料及复制边界2026-11-08)
+
+### 收口条件
+
+本轮完成本地检查和材料准备，外部请求和第三方文件交付均待相应授权。R1d-L 仍为 `STOP/license-disposition`。`r-efi` 的法律评审若接受 MIT 路线，先设计 R1d-G，待该轨通过后设计 R1d-D。若评审要求其他许可证材料，则按原处置评审准备 R1d-E。两包须沿新证据合同取得有效完整的 `PASS` 才进入另获授权的 [R2 非实现者复核](../testing/sw-g2-mls-rs-license-notice-review.md#r2-非实现者复核)。Phase B 与 SW-G2 仍在等待。
+
+## Node 联合事务接入源码核对（2026-10-24）
+
+本节是 Node 服务运行可靠性任务中的只读工程核对，不是完整安全审计、许可证补证、R2 或 Phase B。实际读取 D2 run `20260902-130415-49997.8P5Td6` 留存的三个 crate 及解包源码；没有执行其 Cargo、复用该缓存构建、改动 archive、provider 或历史 evidence。三个归档 SHA-256 均与仓库固定 lock 一致，所读核心源码又与归档对应 entry 逐字比较一致：
+
+| 对象 | 固定归档 SHA-256 | 核心源码定位 |
+| --- | --- | --- |
+| mls-rs 0.56.0 | `4392c3b3ed7d835ca8f318f85ca65d3f0d3e879538d6e70679827a2f3af72029` | `src/group/snapshot.rs`、`state_repo.rs`、`mod.rs`；包内 VCS commit `8f1b43f447a792ff9307f1c2c7f54da63914870e` |
+| mls-rs-core 0.27.0 | `e282079e5bd2fe95a009ac8af6a8e510924d876234ee494cd97f15f52de53cb0` | `src/group/group_state.rs`、`src/key_package.rs`；包内 VCS commit `a0eb41def0cf227034bde19b7c11e62ab2a74a03` |
+| mls-rs-provider-sqlite 0.23.0 | `e8e52c2b3b9c3421fe4bd96266016306595a66c1f4830ee2f1a19d50b209895e` | `src/lib.rs`、`group_state.rs`、`key_package.rs`、`connection_strategy.rs`、Cargo.toml；包内 VCS commit 同上 |
+
+### 实际 API 与限制
+
+| 已核对事实 | 对 Node 的影响 |
+| --- | --- |
+| `Group::process_incoming_message` 修改内存状态，持久化须显式调用 `write_to_storage`；后者导出 snapshot 并调用 state repository | 应用处理成功与 SQLite 提交成功是不同事实；提交前不能展示明文、发出证据或发送密文 |
+| `GroupStateStorage::write` 接受 `GroupState`、epoch inserts、epoch updates；还有 state/epoch/max_epoch_id 查询 | 可以评审正式 trait 适配，但现有 Node `SecurityUpdate` 单个不透明 blob 不足以表示完整安全持久操作。trait 注释提及的 `delete_epoch_under` 不在此版本实际签名中，不能照注释臆造参数 |
+| `state_repo.rs` 先调用 group storage write，再删除待消费 KeyPackage，之后清空内存 pending inserts/updates | 联合边界必须包含 group/epoch 和 KeyPackage 消费；仅包住 group write 仍可能部分完成。外围事务失败时必须废弃已推进的内存 group 并从持久结果重建 |
+| SQLite engine 分别通过 `ConnectionStrategy::make_connection` 创建 group、KeyPackage、PSK、application storage；各 storage 内部持有私有连接 | 指向同一路径不意味着使用同一连接或同一事务；公开 `ConnectionStrategy` 返回拥有所有权的 `Connection`，并非借用 Node 事务 |
+| `SqLiteGroupStateStorage::update_group_state` 内部开始并 commit 事务；application `transact_insert` 也自行 commit；KeyPackage 操作独立执行 SQL | 现成 provider 没有公开的“由 Node 统一提交全部操作”入口，不能直接套上 T-A/T-C。外层先提交一份、再提交另一份不满足 ADR 0004 |
+| provider 用 `user_version` 初始化自身表；默认保留有限 prior epochs；KeyPackage decode 路径含 `unwrap` | schema、epoch 保留和损坏拒绝必须由接入层明确控制，不能把 provider 自动初始化或默认保留策略原样接入 Node。发现 `unwrap` 是恢复路径风险输入，不是已复现漏洞结论 |
+
+以上定位可对应上游固定源码：[Group 持久化](https://github.com/awslabs/mls-rs/blob/8f1b43f447a792ff9307f1c2c7f54da63914870e/mls-rs/src/group/state_repo.rs)、[storage trait](https://github.com/awslabs/mls-rs/blob/a0eb41def0cf227034bde19b7c11e62ab2a74a03/mls-rs-core/src/group/group_state.rs)、[SQLite group provider](https://github.com/awslabs/mls-rs/blob/a0eb41def0cf227034bde19b7c11e62ab2a74a03/mls-rs-provider-sqlite/src/group_state.rs)。本轮依据为已核对归档中的文件，没有将网页或浮动分支当作新的 R1 evidence。
+
+### 建议的接入方向与进入条件
+
+**现成 SQLite provider 不能直接承担 Node 联合事务；优先评审基于正式 storage traits 的 Node 事务适配。** 这是 API 级可行方向，尚未通过编译或功能证明，不是密码实现已经可用。
+
+拟议执行顺序为：由唯一状态提交者开启事务，接入层在该事务中读取/保存安全状态与 KeyPackage 消费，完成应用动作、历史、队列和证据责任后统一 COMMIT；提交成功后才对外输出。trait 自身不得另建连接或提前 COMMIT；跨线程调用、重入、缺少活动事务和重复完成必须明确拒绝。`Send + Sync` 约束、同步/异步 feature、锁生命周期与错误传播须在获准功能试验中验证，不能让调用线程持有连接锁后等待 provider 再次取得同一锁。
+
+事务失败或结果不确定时，已调用过候选库的内存 group 必须全部丢弃；不能保留已清空 pending 状态的对象继续加密。恢复只读取完整持久结果，不能导入旧安全快照。密钥材料按库原有字节和 zeroization 类型处理，不手写密码算法或自定义 nonce 策略；SQL 删除也不证明闪存物理擦除。
+
+依赖方面，固定 provider 声明 rusqlite `0.37`，D2 图为 libsqlite3-sys `0.35.0`；Node 为 rusqlite `0.40.2` / libsqlite3-sys `0.38.2`，两个 native crate 都声明 `links = "sqlite3"`。这是整图整合的明确冲突输入，本轮没有试合并构建。若采用 Node 自有 storage trait 适配，可在新产品图中评审不引入旧 SQLite provider；若保留现成 provider，则须单独评审版本/源码变更与事务能力。两条路线都不能修改 D2 旧图以追认历史结果，也不能通过降级 Node 或隐式升级候选绕过复核。
+
+功能接入还须覆盖发送、接收、建组/加入、成员变化、旧 epoch 处理和失败重建；群组 snapshot、epoch 记录、KeyPackage 与应用写入每个边界均需故障用例。当前 Node 单 blob 测试只能作为事务基础，不能当作 storage trait 已适配。
+
+### proof、撤销与时间的未决部分
+
+- MLS 应用内容不能让无会话内容密钥的中继直接读取；当前不存在已接受的 relay-clear proof 映射。接入前须明确证明主体、受信验证键、消息/目标/会话代数绑定、重放窗口和撤销后的处理规则，不能把任意 `core_binding` 或不透明 evidence 当作验证结果。
+- 首次配对与界面授权必须形成 Node 身份到授权主体的可靠映射；HTTPS 开通不证明配对可信。联系人/成员撤销与手机界面撤销分开，持久事务中的检查必须与授权版本一致，不能验证后跨越撤销提交仍使用旧权限。
+- 同一 boot 的受信时间可驱动现有维护；跨 boot 需要可信停机上界与独立防回滚依据。现有 schema 中的单调截止点和墙钟下界不足以证明它们，因此继续隔离旧传输责任。新 boot 的时间锚、候选库状态恢复和迟到 proof 的处理需一起评审，本轮没有自动解除隔离或新加允许跳过检查的开关。
+
+这使后续工作具体落在 storage trait 联合事务、proof 认证映射和可信恢复三处。许可证处置、R2、Phase B、SW-G2 仍按既有顺序完成；本轮没有发送上游消息、联系专业方或新增密码依赖。
+
+## D6—D10 接受与工程接续（2026-10-24）
+
+所有者已接受 [ADR 0005](../adr/0005-node-security-integration.md)，上述只读核对中的路线选择已转为有限范围的设计决定；实际 API 适配与安全能力仍未验证。完整事务、proof、撤销、跨 boot 方案及剩余验收统一见[Node 安全接入设计](node-security-integration.md)。D10 只接受 Node 证据寿命规则，不整体接受 SW-G3 修订或改变旧实验合同。原 D2/R1/R2/Phase B 状态不变，新产品依赖图不得覆盖历史图。

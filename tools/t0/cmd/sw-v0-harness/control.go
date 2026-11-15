@@ -527,20 +527,21 @@ func (n *nodeActor) step(d harness.NodeStep) error {
 	if err != nil {
 		return err
 	}
-	n.sends = sends
-	n.handles = []harness.SendHandle{}
-	n.consumed = map[int64]bool{}
+	handles := []harness.SendHandle{}
 	for _, r := range report.Decisions {
 		if r.Send {
 			if n.gates[r.Neighbor] {
-				return errors.New("SEND_WHILE_GATE_DOWN")
+				return errors.New(harness.SendWhileGateDown)
 			}
-			n.handles = append(n.handles, harness.SendHandle{Index: int64(len(n.handles)), Kind: r.Kind, Neighbor: r.Neighbor})
+			handles = append(handles, harness.SendHandle{Index: int64(len(handles)), Kind: r.Kind, Neighbor: r.Neighbor})
 		}
 	}
-	if len(n.handles) != len(sends) {
+	if len(handles) != len(sends) {
 		return errors.New("SEND_REPORT_COUNT")
 	}
+	n.sends = sends
+	n.handles = handles
+	n.consumed = map[int64]bool{}
 	return nil
 }
 func (n *nodeActor) arm(ctx context.Context, p harness.ReceivePermit) error {
@@ -767,6 +768,9 @@ func (n *nodeActor) probe(ctx context.Context, p harness.NodeProbe) error {
 func readControlLine(reader *bufio.Reader, cap int) ([]byte, error) {
 	line, err := reader.ReadSlice('\n')
 	if err != nil {
+		if errors.Is(err, io.EOF) && len(line) > 0 {
+			return nil, io.ErrUnexpectedEOF
+		}
 		return nil, err
 	}
 	if len(line) > cap+1 {
@@ -778,6 +782,9 @@ func serveNodeControl(ctx context.Context, in io.Reader, out io.Writer, n *nodeA
 	reader := bufio.NewReaderSize(in, controlRequestCap+2)
 	for {
 		line, err := readControlLine(reader, controlRequestCap)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		if err != nil {
 			return fmt.Errorf("control read: %w", err)
 		}
@@ -800,6 +807,11 @@ func serveNodeControl(ctx context.Context, in io.Reader, out io.Writer, n *nodeA
 		}
 		if k != len(b) {
 			return io.ErrShortWrite
+		}
+		// The response carries the implementation failure. A clean transport
+		// exit lets the supervisor distinguish it from a failure to reap.
+		if r.Error == harness.SendWhileGateDown {
+			return nil
 		}
 		if r.Error != "" {
 			return errors.New(r.Error)

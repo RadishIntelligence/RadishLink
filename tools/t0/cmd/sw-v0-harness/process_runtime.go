@@ -417,43 +417,15 @@ func runNetworkMatrix(ctx context.Context, r processRunner, root string) (runErr
 				if callErr == nil {
 					callErr = s.drive()
 				}
-				if callErr != nil {
-					abort := harness.AbortDetail{Now: s.now, Stage: "process_scenario", Error: "EXECUTION", Reason: "sample_stopped"}
-					ref := s.record("driver", "execution_aborted", 0, abort)
-					s.semantic("driver", "execution_aborted", 0, 0, 0, "", abort, ref)
-				}
-				s.guard = nil
-				residuals, cleanupErr := s.cleanup()
-				sampleCancel()
-				callErr = errors.Join(callErr, cleanupErr, s.err)
-				m := harness.NetworkManifest{Schema: 3, Observation: 1, Batch: batch, Run: run, Evidence: fmt.Sprintf("%s/%s/%s/%d", batch, profile.ID, sub.ID, repeat), Repeat: int64(repeat), ProfileID: profile.ID, ProfileVersion: profile.Version, Seed: profile.Seed, Variant: profile.Variant, Subcase: sub.ID, Mode: profile.Mode, Security: profile.Security, GitRevision: p.Revision, GoVersion: p.GoVersion, OS: p.OS, Arch: p.Arch, Started: started, Ended: time.Now().UTC().Format(time.RFC3339Nano), Topology: profile.Topology, Size: sub.Size, Count: 1, Window: 30000, Control: 1, Transport: harness.NetworkTransport, FaultLayer: harness.NetworkFaultLayer, HostBinary: hostHash, NodeBinary: nodeHash, Image: image, DockerClient: p.Docker.Client.Version, DockerServer: p.Docker.Server.Version, DaemonOS: p.Docker.Server.Os, DaemonArch: p.Docker.Server.Arch, Contract: p.Contract, Profiles: p.Profiles}
-				b := s.bundle(m, residuals)
+				m := harness.NetworkManifest{Schema: 3, Observation: harness.NetworkObservationVersion, Batch: batch, Run: run, Evidence: fmt.Sprintf("%s/%s/%s/%d", batch, profile.ID, sub.ID, repeat), Repeat: int64(repeat), ProfileID: profile.ID, ProfileVersion: profile.Version, Seed: profile.Seed, Variant: profile.Variant, Subcase: sub.ID, Mode: profile.Mode, Security: profile.Security, GitRevision: p.Revision, GoVersion: p.GoVersion, OS: p.OS, Arch: p.Arch, Started: started, Topology: profile.Topology, Size: sub.Size, Count: 1, Window: 30000, Control: 1, Transport: harness.NetworkTransport, FaultLayer: harness.NetworkFaultLayer, HostBinary: hostHash, NodeBinary: nodeHash, Image: image, DockerClient: p.Docker.Client.Version, DockerServer: p.Docker.Server.Version, DaemonOS: p.Docker.Server.Os, DaemonArch: p.Docker.Server.Arch, Contract: p.Contract, Profiles: p.Profiles}
 				dest := filepath.Join(group, strconv.Itoa(repeat))
-				if callErr != nil {
-					e := writeNewJSON(filepath.Join(artifact, run+"-incomplete.json"), struct {
-						Error  string
-						Bundle harness.NetworkBundle
-					}{callErr.Error(), b}, diagnosticBudget, 32<<20)
-					return &networkExit{2, errors.Join(callErr, e)}
+				saved, err := s.finish(m, dest, artifact, evidenceBudget, diagnosticBudget, callErr)
+				sampleCancel()
+				if saved {
+					sampleCount++
 				}
-				if err = harness.WriteNetworkBundleBudgeted(dest, b, evidenceBudget); err != nil {
-					e := writeNewJSON(filepath.Join(artifact, run+"-rejected.json"), struct {
-						Error  string
-						Bundle harness.NetworkBundle
-					}{err.Error(), b}, diagnosticBudget, 32<<20)
-					return &networkExit{2, errors.Join(err, e)}
-				}
-				_, _, result, err := harness.AssessNetwork(b)
 				if err != nil {
 					return err
-				}
-				sampleCount++
-				if result != "PASS" {
-					code := 2
-					if result == "FAIL" {
-						code = 1
-					}
-					return &networkExit{code, fmt.Errorf("sample %s: %s", run, result)}
 				}
 			}
 			if _, err = harness.CompareEvidenceRuns(group); err != nil {
@@ -463,4 +435,54 @@ func runNetworkMatrix(ctx context.Context, r processRunner, root string) (runErr
 	}
 	batchResult = "PASS"
 	return nil
+}
+
+func (s *processSample) finish(m harness.NetworkManifest, dest, artifact string, evidenceBudget, diagnosticBudget *harness.NetworkWriteBudget, callErr error) (bool, error) {
+	gateError := ""
+	switch {
+	case errors.Is(callErr, errGateSend):
+		gateError = harness.SendWhileGateDown
+	case errors.Is(callErr, errBCGateCustody):
+		gateError = harness.BCGateCustodyMissing
+	}
+	s.gateAbort = gateError != ""
+	if callErr != nil {
+		abort := harness.AbortDetail{Now: s.now, Stage: "process_scenario", Error: "EXECUTION", Reason: "sample_stopped"}
+		if s.gateAbort {
+			abort.Stage, abort.Error, abort.Reason = "step", gateError, "implementation_error"
+		}
+		ref := s.record("driver", "execution_aborted", 0, abort)
+		s.semantic("driver", "execution_aborted", 0, 0, 0, "", abort, ref)
+	}
+	s.guard = nil
+	residuals, cleanupErr := s.cleanup()
+	if m.Ended == "" {
+		m.Ended = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	b := s.bundle(m, residuals)
+	saveDiagnostic := func(suffix string, cause error) (bool, error) {
+		err := writeNewJSON(filepath.Join(artifact, s.run+suffix+".json"), struct {
+			Error  string
+			Bundle harness.NetworkBundle
+		}{cause.Error(), b}, diagnosticBudget, 32<<20)
+		return false, &networkExit{2, errors.Join(cause, err)}
+	}
+	if s.err != nil || (!s.gateAbort && (callErr != nil || cleanupErr != nil)) {
+		return saveDiagnostic("-incomplete", errors.Join(callErr, cleanupErr, s.err))
+	}
+	if err := harness.WriteNetworkBundleBudgeted(dest, b, evidenceBudget); err != nil {
+		return saveDiagnostic("-rejected", errors.Join(callErr, cleanupErr, err))
+	}
+	_, _, result, err := harness.AssessNetwork(b)
+	if err != nil {
+		return true, &networkExit{2, errors.Join(callErr, cleanupErr, err)}
+	}
+	if result == "PASS" {
+		return true, nil
+	}
+	code := 2
+	if result == "FAIL" {
+		code = 1
+	}
+	return true, &networkExit{code, errors.Join(fmt.Errorf("sample %s: %s", s.run, result), callErr, cleanupErr)}
 }

@@ -1,0 +1,840 @@
+use super::tests::{ACTIVITY, Workspace, clock, destination, relay, test_credential};
+use super::*;
+use ControlIngressAdmission as Admission;
+
+fn verified(object: PreparedControl) -> ControlVerificationOutcome {
+    ControlVerificationOutcome::Verified(Box::new(object))
+}
+fn queue(s: &mut Store, peer: u8, body: &[u8]) -> Result<Admission> {
+    s.queue_control_candidate(ACTIVITY, test_credential(peer), body)
+}
+fn object(issuer: u8, target: u8, id: u8) -> PreparedControl {
+    PreparedControl {
+        fields: ControlPayload {
+            activity: ACTIVITY,
+            kind: if issuer == target {
+                ControlKind::Exit
+            } else {
+                ControlKind::Report
+            },
+            issuer: test_credential(issuer),
+            issuer_id: [issuer; 16],
+            target: test_credential(target),
+            target_id: [target; 16],
+            operation: [id; 16],
+            reason: 0,
+            reference: [id; 32],
+            payload: vec![id],
+        },
+        cose: vec![id],
+    }
+}
+fn job(s: &mut Store) -> ControlVerificationJob {
+    let p = s.next_control_verification().unwrap();
+    assert!(p.discarded.is_empty());
+    p.job.unwrap()
+}
+fn lease(s: &mut Store, peer: u8, body: &[u8]) -> ControlVerificationJob {
+    assert_eq!(queue(s, peer, body).unwrap(), Admission::Queued);
+    job(s)
+}
+fn fill(s: &mut Store) {
+    for round in 1..=4 {
+        s.advance_clock(clock(round * 1000)).unwrap();
+        for peer in 2..=5 {
+            let mut bytes = vec![peer; 512];
+            bytes[0] = round as u8;
+            assert_eq!(queue(s, peer, &bytes).unwrap(), Admission::Queued);
+        }
+    }
+}
+
+fn register(s: &mut Store, peer: u8) -> ControlIngressChannel {
+    s.register_control_ingress_channel(ACTIVITY, test_credential(1), test_credential(peer))
+        .unwrap()
+}
+
+#[test]
+fn reconnect_with_same_credentials_only_releases_old_lease_and_new_result_commits() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.receive(relay("one")).unwrap();
+    s.advance_clock(clock(2000)).unwrap();
+    let old_channel = register(&mut s, 4);
+    let exit = object(2, 2, 7);
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&old_channel, &exit.cose)
+            .unwrap()
+            .0,
+        Admission::Queued
+    );
+    let old_job = job(&mut s);
+    assert_eq!(old_job.channel(), Some(old_channel.binding()));
+    assert_eq!(
+        s.register_control_ingress_channel(ACTIVITY, test_credential(1), test_credential(4))
+            .err()
+            .unwrap()
+            .code,
+        Code::Conflict
+    );
+    s.close_control_ingress_channel(&old_channel).unwrap();
+    let current_channel = register(&mut s, 4);
+    assert!(current_channel.binding().instance > old_channel.binding().instance);
+    assert_eq!(
+        s.close_control_ingress_channel(&old_channel)
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&old_channel, &exit.cose)
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&current_channel, &exit.cose)
+            .unwrap()
+            .0,
+        Admission::Queued
+    );
+    let current_job = job(&mut s);
+    assert_eq!(current_job.channel(), Some(current_channel.binding()));
+    assert_eq!(current_job.policy_revision(), old_job.policy_revision());
+    assert_eq!(s.control_ingress_usage().verifying, 2);
+    let revision = s.revision().unwrap();
+    let err = s
+        .complete_control_verification(old_job, verified(object(2, 2, 7)), &[])
+        .unwrap_err();
+    assert_eq!(err.operation, "control ingress channel instance changed");
+    assert_eq!(s.control_ingress_usage().verifying, 1);
+    assert_eq!(s.revision().unwrap(), revision);
+    assert_eq!(s.control_usage().unwrap().objects, 0);
+    assert!(!s.message("one").unwrap().unwrap().policy_stopped);
+    assert!(s.next_outbound_handoff().is_none());
+
+    assert_eq!(
+        s.complete_control_verification(
+            current_job,
+            verified(exit),
+            &[ControlNeighbor {
+                participant: [3; 16],
+                link: Link::Up
+            }]
+        )
+        .unwrap(),
+        ControlVerificationCompletion::Accepted(ControlAdmission::Inserted([7; 32]))
+    );
+    assert_eq!(s.revision().unwrap(), revision + 1);
+    assert!(s.message("one").unwrap().unwrap().policy_stopped);
+    assert_eq!(
+        s.control_binding_state(test_credential(2)).unwrap(),
+        Some(BindingState::Blocked)
+    );
+    assert_eq!(
+        s.control_progress([7; 32], [3; 16])
+            .unwrap()
+            .unwrap()
+            .ack_attempts,
+        0
+    );
+    assert!(s.next_outbound_handoff().is_none());
+    assert_eq!(s.control_ingress_usage().verifying, 0);
+}
+
+#[test]
+fn waiting_from_closed_instance_is_discarded_instead_of_leased_on_reconnect() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    let old = register(&mut s, 2);
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&old, &[7]).unwrap().0,
+        Admission::Queued
+    );
+    s.close_control_ingress_channel(&old).unwrap();
+    let new = register(&mut s, 2);
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&new, &[7]).unwrap().0,
+        Admission::Queued
+    );
+    assert_eq!(s.control_ingress_usage().waiting, 2);
+    let poll = s.next_control_verification().unwrap();
+    assert_eq!(poll.discarded.len(), 1);
+    assert_eq!(
+        poll.discarded[0].operation,
+        "control ingress channel instance changed"
+    );
+    let fresh = poll.job.unwrap();
+    assert_eq!(fresh.channel(), Some(new.binding()));
+    assert_eq!(fresh.cose(), &[7]);
+    s.cancel_control_verification(fresh).unwrap();
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&new, &[8]).unwrap().0,
+        Admission::RateLimited
+    );
+}
+
+#[test]
+fn closing_fences_ingress_and_late_results_before_confirmation() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    let old = register(&mut s, 2);
+    assert_eq!(
+        s.receive_destination_on_channel(&old, destination("committed", 0))
+            .unwrap()
+            .1,
+        OutboundAckAdmission::Queued
+    );
+    s.queue_control_candidate_on_channel(&old, &[7]).unwrap();
+    let running = job(&mut s);
+    s.queue_control_candidate_on_channel(&old, &[8]).unwrap();
+    let revision = s.revision().unwrap();
+
+    s.begin_control_ingress_channel_close(&old).unwrap();
+    s.begin_control_ingress_channel_close(&old).unwrap();
+    assert!(s.outbound_acks.is_empty());
+    assert_eq!(s.control_ingress_usage().verifying, 1);
+    let poll = s.next_control_verification().unwrap();
+    assert!(poll.job.is_none());
+    assert_eq!(poll.discarded.len(), 1);
+    assert_eq!(
+        poll.discarded[0].operation,
+        "control ingress channel closing"
+    );
+    for error in [
+        s.queue_control_candidate_on_channel(&old, &[9])
+            .unwrap_err(),
+        s.receive_destination_on_channel(&old, destination("late", 1))
+            .unwrap_err(),
+        s.complete_control_verification_with_ack(running, verified(object(4, 3, 7)), &[])
+            .unwrap_err(),
+    ] {
+        assert_eq!(error.operation, "control ingress channel closing");
+    }
+    assert_eq!(s.control_ingress_usage().verifying, 0);
+    assert_eq!(s.control_usage().unwrap().objects, 0);
+    assert!(s.message("late").unwrap().is_none());
+    assert!(
+        s.message("committed")
+            .unwrap()
+            .unwrap()
+            .receipt_intent_pending
+    );
+    assert_eq!(s.revision().unwrap(), revision);
+
+    s.close_control_ingress_channel(&old).unwrap();
+    let current = register(&mut s, 2);
+    assert_eq!(
+        s.begin_control_ingress_channel_close(&old)
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    assert_eq!(
+        s.receive_destination_on_channel(&current, destination("committed", 0))
+            .unwrap()
+            .1,
+        OutboundAckAdmission::Queued
+    );
+}
+
+#[test]
+fn reconnect_preserves_all_sixteen_slots_and_original_peer_bucket() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    let channels = [
+        register(&mut s, 2),
+        register(&mut s, 3),
+        register(&mut s, 4),
+        register(&mut s, 5),
+    ];
+    for now in 1..=4 {
+        s.advance_clock(clock(now * 1000)).unwrap();
+        for channel in &channels {
+            assert_eq!(
+                s.queue_control_candidate_on_channel(channel, &[now as u8; 512])
+                    .unwrap(),
+                (Admission::Queued, OutboundAckAdmission::NotEligible)
+            );
+        }
+    }
+    let mut jobs: Vec<_> = (0..16).map(|_| job(&mut s)).collect();
+    let old = &channels[0];
+    s.begin_control_ingress_channel_close(old).unwrap();
+    assert_eq!(s.control_ingress_usage().verifying, 16);
+    assert_eq!(s.ingress.registered_channels().count(), 4);
+    assert_eq!(
+        s.register_control_ingress_channel(ACTIVITY, test_credential(1), test_credential(2))
+            .err()
+            .unwrap()
+            .code,
+        Code::Conflict
+    );
+    s.close_control_ingress_channel(old).unwrap();
+    let new = register(&mut s, 2);
+    assert_eq!(s.control_ingress_usage().object_bytes, 8192);
+    s.advance_clock(clock(5000)).unwrap();
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&new, &[8]).unwrap().0,
+        Admission::QueueFull
+    );
+    let first = jobs.remove(0);
+    assert_eq!(first.channel(), Some(old.binding()));
+    let mut report = object(4, 3, 7);
+    report.cose = first.cose().to_vec();
+    assert_eq!(
+        s.complete_control_verification(first, verified(report), &[])
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    assert_eq!(s.control_ingress_usage().verifying, 15);
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&new, &[8]).unwrap().0,
+        Admission::RateLimited
+    );
+    s.advance_clock(clock(6000)).unwrap();
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&new, &[8]).unwrap().0,
+        Admission::Queued
+    );
+    for job in jobs {
+        s.cancel_control_verification(job).unwrap();
+    }
+}
+
+#[test]
+fn reopened_owner_rejects_old_channel_even_when_instance_number_matches() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    let old = register(&mut s, 2);
+    s.advance_clock(clock(1000)).unwrap();
+    s.queue_control_candidate_on_channel(&old, &[7]).unwrap();
+    let old_job = job(&mut s);
+    drop(s);
+
+    let mut s = w.reopen(1000);
+    let new = register(&mut s, 2);
+    assert_eq!(old.binding(), new.binding());
+    assert_eq!(
+        s.begin_control_ingress_channel_close(&old)
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    assert_eq!(
+        s.close_control_ingress_channel(&old).unwrap_err().code,
+        Code::Conflict
+    );
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&old, &[7])
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    s.advance_clock(clock(2000)).unwrap();
+    assert_eq!(
+        s.queue_control_candidate_on_channel(&new, &[7]).unwrap().0,
+        Admission::Queued
+    );
+    let new_job = job(&mut s);
+    assert_eq!(
+        s.complete_control_verification(old_job, verified(object(4, 3, 7)), &[])
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    assert_eq!(s.control_ingress_usage().verifying, 1);
+    s.cancel_control_verification(new_job).unwrap();
+}
+#[test]
+fn empty_start_fractional_refill_per_peer_and_global_bursts_are_enforced() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    assert_eq!(queue(&mut s, 2, b"a").unwrap(), Admission::RateLimited);
+    s.advance_clock(clock(999)).unwrap();
+    assert_eq!(queue(&mut s, 2, b"a").unwrap(), Admission::RateLimited);
+    s.advance_clock(clock(1000)).unwrap();
+    for peer in 2..=5 {
+        assert_eq!(queue(&mut s, peer, &[peer]).unwrap(), Admission::Queued);
+    }
+    assert_eq!(queue(&mut s, 2, b"again").unwrap(), Admission::RateLimited);
+    let w2 = Workspace::new();
+    let mut s = w2.create();
+    s.advance_clock(clock(2000)).unwrap();
+    for body in [b"a", b"b"] {
+        assert_eq!(queue(&mut s, 2, body).unwrap(), Admission::Queued);
+    }
+    assert_eq!(queue(&mut s, 2, b"c").unwrap(), Admission::RateLimited);
+    for body in [b"a", b"b"] {
+        assert_eq!(queue(&mut s, 3, body).unwrap(), Admission::Queued);
+    }
+    assert_eq!(queue(&mut s, 4, b"c").unwrap(), Admission::RateLimited);
+    s.advance_clock(clock(2249)).unwrap();
+    assert_eq!(queue(&mut s, 4, b"c").unwrap(), Admission::RateLimited);
+    s.advance_clock(clock(2250)).unwrap();
+    assert_eq!(queue(&mut s, 4, b"c").unwrap(), Admission::Queued);
+}
+#[test]
+fn all_sixteen_waiting_or_leased_objects_count_and_full_queue_does_not_refund() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    fill(&mut s);
+    assert_eq!(
+        s.control_ingress_usage(),
+        ControlIngressUsage {
+            waiting: 16,
+            verifying: 0,
+            object_bytes: 8192,
+            peer_buckets: 4
+        }
+    );
+    let mut jobs: Vec<_> = (0..16).map(|_| job(&mut s)).collect();
+    assert!(s.next_control_verification().unwrap().job.is_none());
+    assert_eq!(s.control_ingress_usage().verifying, 16);
+    s.advance_clock(clock(5000)).unwrap();
+    let revision = s.revision().unwrap();
+    assert_eq!(queue(&mut s, 2, b"full").unwrap(), Admission::QueueFull);
+    s.cancel_control_verification(jobs.pop().unwrap()).unwrap();
+    assert_eq!(
+        queue(&mut s, 2, b"no-refund").unwrap(),
+        Admission::RateLimited
+    );
+    assert_eq!(s.revision().unwrap(), revision);
+    s.advance_clock(clock(6000)).unwrap();
+    assert_eq!(queue(&mut s, 2, b"later").unwrap(), Admission::Queued);
+    assert_eq!(
+        s.control_ingress_usage().waiting + s.control_ingress_usage().verifying,
+        16
+    );
+    for job in jobs {
+        s.cancel_control_verification(job).unwrap();
+    }
+}
+#[test]
+fn unknown_pending_local_and_wrong_activity_are_rejected_before_any_rate_slot() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    let mut pending = test_credential(2);
+    pending[31] = 2;
+    s.stage_control_binding(
+        ACTIVITY,
+        ControlBinding {
+            participant: [2; 16],
+            credential: pending,
+            generation: 2,
+            body: vec![2, 2],
+        },
+    )
+    .unwrap();
+    for (activity, neighbor) in [
+        ([9; 32], test_credential(2)),
+        (ACTIVITY, test_credential(1)),
+        (ACTIVITY, [9; 32]),
+        (ACTIVITY, pending),
+    ] {
+        assert_eq!(
+            s.queue_control_candidate(activity, neighbor, b"untrusted")
+                .unwrap_err()
+                .code,
+            Code::Conflict
+        );
+    }
+    assert_eq!(s.control_ingress_usage().peer_buckets, 0);
+    assert_eq!(queue(&mut s, 2, b"valid").unwrap(), Admission::Queued);
+    s.block_control_binding(ACTIVITY, test_credential(2))
+        .unwrap();
+    assert_eq!(
+        queue(&mut s, 2, b"blocked").unwrap_err().code,
+        Code::Conflict
+    );
+    assert_eq!(s.control_ingress_usage().peer_buckets, 1);
+}
+#[test]
+fn malformed_and_oversized_candidates_do_not_allocate_or_write_unverified_bytes() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    let before = fs::read(w.dir.join("node.sqlite3")).unwrap();
+    let revision = s.revision().unwrap();
+    for bytes in [&[][..], &[7; 513][..]] {
+        assert_eq!(
+            queue(&mut s, 2, bytes).unwrap_err().code,
+            Code::InvalidInput
+        );
+    }
+    assert_eq!(s.control_ingress_usage().object_bytes, 0);
+    assert_eq!(queue(&mut s, 2, &[7; 512]).unwrap(), Admission::Queued);
+    assert_eq!(s.control_ingress_usage().object_bytes, 512);
+    assert_eq!(s.revision().unwrap(), revision);
+    assert_eq!(fs::read(w.dir.join("node.sqlite3")).unwrap(), before);
+    assert_eq!(s.control_usage().unwrap().objects, 0);
+    assert_eq!(s.usage().unwrap().evidence_count, 0);
+}
+#[test]
+fn duplicate_pending_and_verified_cache_still_consume_rate_and_do_not_spawn_work() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    assert_eq!(queue(&mut s, 2, b"same").unwrap(), Admission::Queued);
+    assert_eq!(
+        queue(&mut s, 2, b"same").unwrap(),
+        Admission::AlreadyPending
+    );
+    assert_eq!(queue(&mut s, 2, b"same").unwrap(), Admission::RateLimited);
+    assert_eq!(queue(&mut s, 3, b"same").unwrap(), Admission::Queued);
+    assert_eq!(s.control_ingress_usage().waiting, 2);
+    s.accept_control(object(4, 3, 7), &[]).unwrap();
+    s.advance_clock(clock(4000)).unwrap();
+    let revision = s.revision().unwrap();
+    assert_eq!(queue(&mut s, 2, &[7]).unwrap(), Admission::Known([7; 32]));
+    assert_eq!(queue(&mut s, 2, &[7]).unwrap(), Admission::Known([7; 32]));
+    assert_eq!(queue(&mut s, 2, &[7]).unwrap(), Admission::RateLimited);
+    assert_eq!(queue(&mut s, 3, &[7, 0]).unwrap(), Admission::Queued);
+    assert_eq!(s.control_usage().unwrap().objects, 1);
+    assert_eq!(s.revision().unwrap(), revision);
+    s.block_control_binding(ACTIVITY, test_credential(4))
+        .unwrap();
+    assert_eq!(queue(&mut s, 3, &[7]).unwrap_err().code, Code::Conflict);
+}
+#[test]
+fn fifo_rejection_and_exact_completion_bind_original_bytes_and_activity() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    queue(&mut s, 2, &[7]).unwrap();
+    queue(&mut s, 2, &[8]).unwrap();
+    let first = job(&mut s);
+    assert_eq!(first.cose(), &[7]);
+    assert_eq!(first.neighbor(), test_credential(2));
+    assert_eq!(first.activity(), ACTIVITY);
+    assert_eq!(first.policy_revision(), 5);
+    assert_eq!(
+        s.complete_control_verification(first, ControlVerificationOutcome::Rejected, &[])
+            .unwrap(),
+        ControlVerificationCompletion::Rejected
+    );
+    let second = job(&mut s);
+    assert_eq!(second.cose(), &[8]);
+    assert_eq!(
+        s.complete_control_verification(second, verified(object(4, 3, 9)), &[])
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    s.advance_clock(clock(3000)).unwrap();
+    let pending = lease(&mut s, 2, &[7]);
+    let mut different = object(4, 3, 7);
+    different.fields.activity = [9; 32];
+    assert_eq!(
+        s.complete_control_verification(pending, verified(different), &[])
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    assert_eq!(s.control_ingress_usage().verifying, 0);
+    assert_eq!(s.control_usage().unwrap().objects, 0);
+}
+#[test]
+fn policy_changes_expiry_and_retiring_refuse_waiting_and_inflight_work() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    let running = lease(&mut s, 2, &[7]);
+    queue(&mut s, 3, &[8]).unwrap();
+    s.block_control_binding(ACTIVITY, test_credential(5))
+        .unwrap();
+    let poll = s.next_control_verification().unwrap();
+    assert!(poll.job.is_none());
+    assert_eq!(poll.discarded.len(), 1);
+    assert_eq!(poll.discarded[0].code, Code::Conflict);
+    assert_eq!(s.control_ingress_usage().verifying, 1);
+    assert_eq!(
+        s.complete_control_verification(running, verified(object(4, 3, 7)), &[])
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    s.advance_clock(clock(3000)).unwrap();
+    let running = lease(&mut s, 2, &[9]);
+    queue(&mut s, 3, &[10]).unwrap();
+    s.shorten_control_activity(ACTIVITY, 3100).unwrap();
+    s.observe_clock(&clock(3100)).unwrap();
+    let poll = s.next_control_verification().unwrap();
+    assert_eq!(poll.discarded[0].code, Code::Expired);
+    assert!(poll.job.is_none());
+    assert_eq!(queue(&mut s, 2, &[9]).unwrap_err().code, Code::Expired);
+    assert_eq!(
+        s.complete_control_verification(running, verified(object(4, 3, 9)), &[])
+            .unwrap_err()
+            .code,
+        Code::Expired
+    );
+    assert_eq!(s.current_clock(), clock(3000));
+    let w2 = Workspace::new();
+    let mut s = w2.create();
+    s.advance_clock(clock(2000)).unwrap();
+    s.begin_control_exit(object(1, 1, 9).fields).unwrap();
+    assert_eq!(queue(&mut s, 2, &[7]).unwrap_err().code, Code::Conflict);
+}
+#[test]
+fn owner_block_remains_available_at_full_queue_and_received_exit_stops_business_atomically() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    fill(&mut s);
+    s.block_control_binding(ACTIVITY, test_credential(5))
+        .unwrap();
+    assert_eq!(s.control_ingress_usage().waiting, 16);
+    assert_eq!(s.next_control_verification().unwrap().discarded.len(), 16);
+    let w2 = Workspace::new();
+    let mut s = w2.create();
+    s.receive(relay("one")).unwrap();
+    s.advance_clock(clock(1000)).unwrap();
+    let pending = lease(&mut s, 4, &[7]);
+    assert_eq!(
+        s.complete_control_verification(
+            pending,
+            verified(object(2, 2, 7)),
+            &[ControlNeighbor {
+                participant: [3; 16],
+                link: Link::Up
+            }]
+        )
+        .unwrap(),
+        ControlVerificationCompletion::Accepted(ControlAdmission::Inserted([7; 32]))
+    );
+    assert!(s.message("one").unwrap().unwrap().policy_stopped);
+    assert_eq!(
+        s.control_binding(&test_credential(2), &[2; 16]).unwrap(),
+        BindingState::Blocked
+    );
+    assert_eq!(
+        s.control_progress([7; 32], [3; 16])
+            .unwrap()
+            .unwrap()
+            .ack_attempts,
+        0
+    );
+    s.advance_clock(clock(2000)).unwrap();
+    assert_eq!(queue(&mut s, 4, &[7]).unwrap(), Admission::Known([7; 32]));
+}
+#[test]
+fn credential_replacement_does_not_refill_neighbor_bucket() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    queue(&mut s, 2, b"a").unwrap();
+    queue(&mut s, 2, b"b").unwrap();
+    let mut next = test_credential(2);
+    next[31] = 2;
+    s.stage_control_binding(
+        ACTIVITY,
+        ControlBinding {
+            participant: [2; 16],
+            credential: next,
+            generation: 2,
+            body: vec![2, 2],
+        },
+    )
+    .unwrap();
+    s.activate_control_binding(ACTIVITY, next, &[2, 2]).unwrap();
+    assert_eq!(
+        s.queue_control_candidate(ACTIVITY, next, b"c").unwrap(),
+        Admission::RateLimited
+    );
+    assert_eq!(s.control_ingress_usage().peer_buckets, 1);
+    assert_eq!(s.next_control_verification().unwrap().discarded.len(), 2);
+    s.advance_clock(clock(3000)).unwrap();
+    assert_eq!(
+        s.queue_control_candidate(ACTIVITY, next, b"c").unwrap(),
+        Admission::Queued
+    );
+}
+#[test]
+fn reopen_starts_empty_and_foreign_job_cannot_match_reused_sequence() {
+    let w = Workspace::new();
+    let mut s = w.create();
+    s.advance_clock(clock(2000)).unwrap();
+    let old = lease(&mut s, 2, &[7]);
+    drop(s);
+    let mut s = w.reopen(2000);
+    assert_eq!(s.control_ingress_usage().waiting, 0);
+    assert_eq!(queue(&mut s, 2, &[7]).unwrap(), Admission::RateLimited);
+    s.advance_clock(clock(2999)).unwrap();
+    assert_eq!(queue(&mut s, 2, &[7]).unwrap(), Admission::RateLimited);
+    s.advance_clock(clock(3000)).unwrap();
+    let new = lease(&mut s, 2, &[7]);
+    assert_eq!(
+        s.complete_control_verification(old, verified(object(4, 3, 7)), &[])
+            .unwrap_err()
+            .code,
+        Code::Conflict
+    );
+    assert_eq!(s.control_ingress_usage().verifying, 1);
+    assert_eq!(
+        s.complete_control_verification(new, verified(object(4, 3, 7)), &[])
+            .unwrap(),
+        ControlVerificationCompletion::Accepted(ControlAdmission::Inserted([7; 32]))
+    );
+}
+#[test]
+fn clock_uncertainty_stops_dispatch_completion_and_admission_but_allows_cancel() {
+    for regression in [false, true] {
+        let w = Workspace::new();
+        let mut s = w.create();
+        s.advance_clock(clock(2000)).unwrap();
+        let pending = lease(&mut s, 2, &[7]);
+        let mut bad = clock(if regression { 1999 } else { 2000 });
+        if !regression {
+            bad.boot = "other".into();
+        }
+        assert_eq!(s.advance_clock(bad).unwrap_err().code, Code::TimeUncertain);
+        assert_eq!(
+            s.next_control_verification().err().unwrap().code,
+            Code::TimeUncertain
+        );
+        assert_eq!(
+            queue(&mut s, 2, &[8]).unwrap_err().code,
+            Code::TimeUncertain
+        );
+        s.cancel_control_verification(pending).unwrap();
+        assert_eq!(s.control_ingress_usage().verifying, 0);
+    }
+}
+#[test]
+fn verified_commit_failure_releases_lease_without_refund_or_partial_policy() {
+    for fault in [TestFault::BeforeCommit, TestFault::AfterCommit] {
+        let w = Workspace::new();
+        let mut s = w.create();
+        s.observe_clock(&clock(1000)).unwrap();
+        let pending = lease(&mut s, 4, &[7]);
+        s.fault = Some(fault);
+        assert_eq!(
+            s.complete_control_verification(pending, verified(object(2, 2, 7)), &[])
+                .unwrap_err()
+                .code,
+            if fault == TestFault::BeforeCommit {
+                Code::StoreUnavailable
+            } else {
+                Code::OutcomeUnknown
+            }
+        );
+        assert!(s.is_quarantined());
+        assert_eq!(s.control_ingress_usage().verifying, 0);
+        let floor: i64 = s
+            .conn
+            .query_row("SELECT monotonic_ms FROM current_clock", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            floor,
+            if fault == TestFault::BeforeCommit {
+                0
+            } else {
+                1000
+            }
+        );
+        drop(s);
+        let mut s = w.reopen(1000);
+        assert_eq!(
+            s.control_usage().unwrap().objects,
+            if fault == TestFault::BeforeCommit {
+                0
+            } else {
+                1
+            }
+        );
+        assert_eq!(
+            s.control_binding(&test_credential(2), &[2; 16]).unwrap(),
+            if fault == TestFault::BeforeCommit {
+                BindingState::Active
+            } else {
+                BindingState::Blocked
+            }
+        );
+        assert_eq!(queue(&mut s, 4, &[8]).unwrap(), Admission::RateLimited);
+    }
+}
+
+#[test]
+fn ingress_crash_child() {
+    let Some(dir) = std::env::var_os("RADISHLINK_INGRESS_TEST_STORE") else {
+        return;
+    };
+    let mut s = Store::open(Path::new(&dir), Limits::default(), clock(0)).unwrap();
+    s.advance_clock(clock(1000)).unwrap();
+    let pending = lease(&mut s, 4, &[7]);
+    match std::env::var("RADISHLINK_INGRESS_TEST_SIDE")
+        .unwrap()
+        .as_str()
+    {
+        "queued" => std::process::exit(73),
+        "before" => s.fault = Some(TestFault::CrashBeforeCommit),
+        "after" => s.fault = Some(TestFault::CrashAfterCommit),
+        _ => panic!("invalid side"),
+    }
+    s.complete_control_verification(
+        pending,
+        verified(object(2, 2, 7)),
+        &[ControlNeighbor {
+            participant: [3; 16],
+            link: Link::Up,
+        }],
+    )
+    .unwrap();
+    panic!("expected controlled exit");
+}
+#[test]
+fn process_exit_discards_unverified_memory_and_recovers_atomic_verified_effects() {
+    for (side, exit, committed) in [
+        ("queued", 73, false),
+        ("before", 71, false),
+        ("after", 72, true),
+    ] {
+        let w = Workspace::new();
+        let s = w.create();
+        drop(s);
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "store::control_ingress_tests::ingress_crash_child",
+                "--nocapture",
+            ])
+            .env("RADISHLINK_INGRESS_TEST_STORE", &w.dir)
+            .env("RADISHLINK_INGRESS_TEST_SIDE", side)
+            .status()
+            .unwrap();
+        assert_eq!(result.code(), Some(exit));
+        let mut s = w.reopen(1000);
+        assert_eq!(s.control_usage().unwrap().objects, u64::from(committed));
+        assert_eq!(
+            s.control_binding(&test_credential(2), &[2; 16]).unwrap(),
+            if committed {
+                BindingState::Blocked
+            } else {
+                BindingState::Active
+            }
+        );
+        assert_eq!(
+            s.control_ingress_usage(),
+            ControlIngressUsage {
+                waiting: 0,
+                verifying: 0,
+                object_bytes: 0,
+                peer_buckets: 0
+            }
+        );
+        assert_eq!(queue(&mut s, 4, &[8]).unwrap(), Admission::RateLimited);
+        assert_eq!(
+            s.business_policy_revision(ACTIVITY).unwrap(),
+            if committed { 6 } else { 5 }
+        );
+        assert_eq!(
+            s.control_progress([7; 32], [3; 16]).unwrap().is_some(),
+            committed
+        );
+    }
+}

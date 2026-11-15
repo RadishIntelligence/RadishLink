@@ -25,6 +25,21 @@ type ControlExchange struct {
 	Request  ControlRequest  `json:"request"`
 	Response ControlResponse `json:"response"`
 }
+
+const (
+	NetworkObservationVersion = 2
+	SendWhileGateDown         = "SEND_WHILE_GATE_DOWN"
+	BCGateCustodyMissing      = "BC_GATE_CUSTODY_MISSING"
+)
+
+// ControlClose records the supervisor's close and wait after a terminal step.
+type ControlClose struct {
+	Node        string   `json:"node"`
+	LastRequest int64    `json:"last_request_sequence"`
+	Discarded   []string `json:"discarded_ingress"`
+	Error       string   `json:"error_code"`
+}
+
 type NetworkEvent struct {
 	ScenarioEvent
 	Sources []int64 `json:"execution_refs"`
@@ -191,6 +206,10 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 	if err := b.Profile.Validate(); err != nil {
 		return bad(err.Error())
 	}
+	reviewed := b.Manifest.Observation == NetworkObservationVersion
+	if !reviewed && b.Manifest.Observation != 1 {
+		return bad("network observation version")
+	}
 	sub, err := b.Profile.Subcase(b.Manifest.Subcase)
 	if err != nil {
 		return bad(err.Error())
@@ -238,6 +257,9 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 	ingressRefs := map[string]int64{}
 	commands := map[int64]ControlExchange{}
 	shutdown := map[string]bool{}
+	closed := map[string]ControlClose{}
+	var abort AbortDetail
+	var abortRef int64
 	var execErrors int64
 	var executionBytes int
 	for i, x := range b.Execution {
@@ -252,6 +274,9 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 		sequence[x.Source] = x.Local
 		switch x.Kind {
 		case "exchange":
+			if reviewed && abortRef != 0 {
+				return bad("control exchange after abort")
+			}
 			v, err := networkDetail[ControlExchange](x.Detail)
 			if err != nil {
 				return bad(err.Error())
@@ -270,6 +295,7 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 			if r.Error != "" {
 				execErrors++
 			}
+			var step NodeStep
 			switch q.Operation {
 			case "init":
 				d, e := networkDetail[NodeInit](q.Detail)
@@ -296,6 +322,7 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 					}
 					consumed[id] = true
 				}
+				step = d
 			case "arm_receive":
 				d, e := networkDetail[ReceivePermit](q.Detail)
 				if e != nil || !networkDirection(d.Sender, q.Node) || d.ID != fmt.Sprintf("%s-%d-%d", d.Sender, d.Generation, d.Index) || d.Ordinal < 1 || arms[d.ID].ID != "" {
@@ -317,6 +344,7 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 			if q.Operation != "init" && !initSeen[q.Node] {
 				return bad("operation before init")
 			}
+			received := map[string]bool{}
 			for _, f := range r.Result.Facts {
 				if f.Now != q.Now || f.Before < q.Generation || f.After > r.Generation || f.Before > f.After {
 					return bad("node fact generation")
@@ -394,10 +422,26 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 					if _, e := detailOf(ScenarioEvent{Kind: f.Kind, Detail: f.Detail}); e != nil {
 						return bad("semantic fact detail")
 					}
+					if reviewed && f.Kind == "frame_received" {
+						frame, err := networkDetail[FrameDetail](f.Detail)
+						if err != nil || received[f.Transfer] || !slices.Contains(step.Inputs, f.Transfer) || frame != ingress[f.Transfer].Frame {
+							return bad("step input/frame binding")
+						}
+						received[f.Transfer] = true
+					}
 				default:
 					return bad("unknown node fact")
 				}
 			}
+			if reviewed && q.Operation == "step" && (r.Error == "" || r.Error == SendWhileGateDown) && len(received) != len(step.Inputs) {
+				return bad("step receipt inventory")
+			}
+		case "control_closed":
+			v, e := networkDetail[ControlClose](x.Detail)
+			if e != nil || !reviewed || x.Source != "driver" || x.Request != 0 || (abort.Error != SendWhileGateDown && abort.Error != BCGateCustodyMissing) || x.Now != abort.Now || !initSeen[v.Node] || closed[v.Node].Node != "" || v.LastRequest != sequence[v.Node] || v.Discarded == nil || (v.Error != "" && (v.Error != "control_close_failed" || len(v.Discarded) != 0)) {
+				return bad("control close binding")
+			}
+			closed[v.Node] = v
 		case "resource":
 			if x.Source != "driver" || x.Request != 0 {
 				return bad("resource source")
@@ -429,6 +473,13 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 			}
 			if _, e := detailOf(ScenarioEvent{Kind: x.Kind, Detail: x.Detail}); e != nil {
 				return bad(e.Error())
+			}
+			if reviewed && x.Kind == "execution_aborted" {
+				v, err := networkDetail[AbortDetail](x.Detail)
+				if err != nil || abortRef != 0 || x.Now != v.Now {
+					return bad("execution abort binding")
+				}
+				abort, abortRef = v, x.Sequence
 			}
 		default:
 			return bad("execution kind")
@@ -561,16 +612,61 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 			return bad("write without ingress/event")
 		}
 	}
+	var gate networkGateReview
+	if reviewed {
+		var err error
+		gate, err = reviewNetworkGate(b, commands, ingress, abort.Error == BCGateCustodyMissing)
+		if err != nil {
+			return bad(err.Error())
+		}
+	}
+	gateAbort := abort.Error == SendWhileGateDown || abort.Error == BCGateCustodyMissing
+	if gateAbort || gate.send != 0 {
+		last := b.Events[len(b.Events)-1]
+		var cause int64
+		if abort.Error == SendWhileGateDown {
+			cause = gate.send
+		} else if abort.Error == BCGateCustodyMissing && gate.send == 0 && gate.bcMissing {
+			cause = gate.trigger
+		}
+		if cause == 0 || abortRef != cause+1 || abort.Stage != "step" || abort.Reason != "implementation_error" || abort.Now != b.Execution[cause-1].Now || last.Kind != "execution_aborted" || !slices.Equal(last.Sources, []int64{abortRef}) || len(closed) != 3 {
+			return bad("gate abort lacks terminal evidence")
+		}
+	}
+	queued := map[string][]string{"A": {}, "B": {}, "C": {}}
 	for id, t := range ingress {
 		if !t.Dropped && !consumed[id] {
-			return bad("unconsumed ingress")
+			if !gateAbort {
+				return bad("unconsumed ingress")
+			}
+			queued[t.Receiver] = append(queued[t.Receiver], id)
 		}
 	}
 	res := b.Residuals
 	if res.Schema != 3 || res.Resources == nil || res.Pending < 0 || res.Children < 0 || res.Connections < 0 {
 		return bad("network residual shape")
 	}
-	cleanup := len(removed) == 8 && shutdown["A"] && shutdown["B"] && shutdown["C"]
+	cleanup := len(removed) == 8
+	if gateAbort {
+		var pending, children int64
+		for node, v := range closed {
+			if v.Error != "" {
+				children++
+				pending += int64(len(queued[node]))
+				continue
+			}
+			slices.Sort(queued[node])
+			if !slices.Equal(v.Discarded, queued[node]) {
+				return bad("disposed ingress differs from abort ledger")
+			}
+		}
+		if res.Children != children || res.Pending != pending {
+			return bad("control close residual mismatch")
+		}
+		cleanup = cleanup && children == 0
+	} else {
+		cleanup = cleanup && shutdown["A"] && shutdown["B"] && shutdown["C"]
+	}
 	wantResidual := []ResourceFact{}
 	for _, alias := range []string{"ab", "bc", "node-A", "node-B", "node-C", "store-A", "store-B", "store-C"} {
 		if v, ok := removed[alias]; ok {
@@ -588,9 +684,29 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 			removedStores++
 		}
 	}
-	m, a, result, err := assessSemantics(semanticContract{3, sub.Size, b.Profile.Fault}, sem, ScenarioResiduals{Schema: 3, Complete: res.Complete, Owned: 3, Removed: removedStores, Pending: res.Pending, Children: res.Children, Clean: cleanup})
+	m, a, result, err := assessSemantics(semanticContract{schema: 3, size: sub.Size, fault: b.Profile.Fault, reviewedGate: reviewed, gateSend: gate.sendEvent}, sem, ScenarioResiduals{Schema: 3, Complete: res.Complete, Owned: 3, Removed: removedStores, Pending: res.Pending, Children: res.Children, Clean: cleanup})
 	if err != nil {
 		return bad(err.Error())
+	}
+	if reviewed && b.Profile.Fault.Direction == "b-to-c" && b.Profile.Fault.Kind == "down" {
+		source := []int64{gate.trigger}
+		if gate.trigger == 0 {
+			source = probeRefs
+		}
+		category := "implementation"
+		if gate.down != gate.trigger {
+			category = "environment"
+		}
+		a.Items = append(a.Items, ScenarioAssertion{ID: "bc_gate_hit", Category: category, Passed: gate.bcHit, Sources: source, Reason: "same_step_custody_commit_and_blocked_forward"})
+		if !gate.bcHit {
+			m.FaultHits = 0
+			if result == "PASS" && category == "implementation" {
+				result = "FAIL"
+			}
+		}
+	}
+	if gate.send != 0 {
+		a.Items = append(a.Items, ScenarioAssertion{ID: "closed_gate_send", Category: "implementation", Passed: false, Sources: []int64{gate.down, gate.send}, Reason: SendWhileGateDown})
 	}
 	out := NetworkMetrics{ScenarioMetrics: m, Timing: "supervisor_logical_ms", Written: int64(len(writes)), Ingress: int64(len(ingress)), Errors: execErrors}
 	for _, f := range ingress {
@@ -598,8 +714,21 @@ func AssessNetwork(b NetworkBundle) (NetworkMetrics, ScenarioAssertions, string,
 			out.Drops++
 		}
 	}
-	good := cleanup && execErrors == 0
-	a.Items = append(a.Items, ScenarioAssertion{ID: "network_execution", Category: "environment", Passed: good, Sources: probeRefs, Reason: "control_transport_and_owned_resources"})
+	knownErrors := int64(0)
+	if gate.send != 0 {
+		knownErrors = 1
+	}
+	good := cleanup && execErrors == knownErrors && (!reviewed || gate.injectionOK)
+	environmentSources := probeRefs
+	if reviewed && !gate.injectionOK {
+		environmentSources = slices.Clone(probeRefs)
+		for _, ref := range []int64{gate.trigger, gate.down, gate.up} {
+			if ref != 0 && !slices.Contains(environmentSources, ref) {
+				environmentSources = append(environmentSources, ref)
+			}
+		}
+	}
+	a.Items = append(a.Items, ScenarioAssertion{ID: "network_execution", Category: "environment", Passed: good, Sources: environmentSources, Reason: "control_transport_and_owned_resources"})
 	if !good {
 		result = "INVALID"
 	}

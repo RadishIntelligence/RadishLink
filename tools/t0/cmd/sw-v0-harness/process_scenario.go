@@ -176,12 +176,16 @@ type processSample struct {
 		node string
 		at   int64
 	}
-	handles  map[string][]harness.SendHandle
-	ordinals map[string]int64
-	now      int64
-	bytes    int
-	err      error
+	handles   map[string][]harness.SendHandle
+	ordinals  map[string]int64
+	now       int64
+	bytes     int
+	err       error
+	gateAbort bool
 }
+
+var errGateSend = errors.New(harness.SendWhileGateDown)
+var errBCGateCustody = errors.New(harness.BCGateCustodyMissing)
 
 func newProcessSample(ctx context.Context, r processRunner, p harness.NetworkProfile, sub, batch, run, epoch, image string) *processSample {
 	return &processSample{ctx: ctx, runner: r, profile: p, subcase: sub, batch: batch, run: run, epoch: epoch, image: image, peers: map[string]controlPeer{}, local: map[string]int64{}, request: map[string]int64{}, generation: map[string]int64{}, snapshots: map[string]harness.ObservedState{}, operations: map[string]int64{}, sends: map[string]int64{}, writes: map[string]int64{}, ingress: map[string]int64{}, pending: map[string]struct {
@@ -335,6 +339,9 @@ func (s *processSample) call(node, operation string, detail any) (harness.Contro
 	}
 	if err = s.consume(node, r, ref); err != nil {
 		return r, err
+	}
+	if operation == "step" && r.Error == harness.SendWhileGateDown {
+		return r, fmt.Errorf("%s %s: %w", node, operation, errGateSend)
 	}
 	if r.Error != "" {
 		return r, fmt.Errorf("%s %s: %s", node, operation, r.Error)
@@ -645,7 +652,7 @@ func (s *processSample) prepare() error {
 	}
 	return s.err
 }
-func scenarioNext(now int64, snapshots map[string]harness.ObservedState, pendingTimes []int64, downAt, upAt int64) int64 {
+func scenarioNext(now int64, snapshots map[string]harness.ObservedState, pendingTimes []int64, downAt, upAt, downDuration int64) int64 {
 	next := int64(30000)
 	for _, at := range pendingTimes {
 		if at > now {
@@ -666,7 +673,7 @@ func scenarioNext(now int64, snapshots map[string]harness.ObservedState, pending
 		}
 	}
 	if downAt >= 0 && upAt < 0 {
-		next = min(next, downAt+5000)
+		next = min(next, downAt+downDuration)
 	}
 	return next
 }
@@ -699,7 +706,7 @@ func (s *processSample) drive() error {
 		for _, p := range s.pending {
 			pendingTimes = append(pendingTimes, p.at)
 		}
-		next := scenarioNext(s.now, s.snapshots, pendingTimes, downAt, upAt)
+		next := scenarioNext(s.now, s.snapshots, pendingTimes, downAt, upAt, s.profile.Fault.Duration)
 		if next <= s.now {
 			return errors.New("clock stalled")
 		}
@@ -730,7 +737,7 @@ func (s *processSample) drive() error {
 					due = true
 				}
 			}
-			if downAt >= 0 && upAt < 0 && s.now == downAt+5000 && (node == "A" && s.profile.Fault.Direction == "a-to-b" || node == "B" && s.profile.Fault.Direction == "b-to-c") {
+			if downAt >= 0 && upAt < 0 && s.now == downAt+s.profile.Fault.Duration && (node == "A" && s.profile.Fault.Direction == "a-to-b" || node == "B" && s.profile.Fault.Direction == "b-to-c") {
 				target = "B"
 				if node == "B" {
 					target = "C"
@@ -745,6 +752,12 @@ func (s *processSample) drive() error {
 			r, err := s.call(node, "step", d)
 			if err != nil {
 				return err
+			}
+			if target == "C" && node == "B" {
+				state := s.snapshots[node]
+				if state.Generation != r.Generation || state.Now != s.now || len(state.Messages) != 1 || state.Messages[0].State != "custody_held" {
+					return errBCGateCustody
+				}
 			}
 			for _, h := range r.Result.Sends {
 				id := transferID(node, r.Generation, h.Index)
@@ -786,13 +799,29 @@ func (s *processSample) cleanup() (harness.NetworkResiduals, error) {
 	active := int64(0)
 	for _, name := range []string{"A", "B", "C"} {
 		if p := s.peers[name]; p != nil {
-			if s.now == 30000 && s.err == nil {
+			if !s.gateAbort && s.now == 30000 && s.err == nil {
 				_, err := s.call(name, "shutdown", struct{}{})
 				result = errors.Join(result, err)
 			}
-			if err := p.Close(); err != nil {
+			err := p.Close()
+			if err != nil {
 				result = errors.Join(result, err)
 				active++
+			}
+			if s.gateAbort {
+				closed := harness.ControlClose{Node: name, LastRequest: s.request[name], Discarded: []string{}}
+				if err != nil {
+					closed.Error = "control_close_failed"
+				} else {
+					for id, pending := range s.pending {
+						if pending.node == name {
+							closed.Discarded = append(closed.Discarded, id)
+							delete(s.pending, id)
+						}
+					}
+					slices.Sort(closed.Discarded)
+				}
+				s.record("driver", "control_closed", 0, closed)
 			}
 		}
 	}

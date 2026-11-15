@@ -49,13 +49,15 @@ func AssessScenario(p ScenarioProfile, subcase string, events []ScenarioEvent, r
 	if err != nil {
 		return ScenarioMetrics{}, ScenarioAssertions{}, "", err
 	}
-	return assessSemantics(semanticContract{2, sub.Size, p.Fault}, events, res)
+	return assessSemantics(semanticContract{schema: 2, size: sub.Size, fault: p.Fault}, events, res)
 }
 
 // The contract is internal and is only constructed after a version-specific profile check.
 type semanticContract struct {
 	schema, size int64
 	fault        ScenarioFault
+	reviewedGate bool
+	gateSend     int64
 }
 
 func assessSemantics(c semanticContract, events []ScenarioEvent, res ScenarioResiduals) (ScenarioMetrics, ScenarioAssertions, string, error) {
@@ -232,8 +234,12 @@ func assessSemantics(c semanticContract, events []ScenarioEvent, res ScenarioRes
 					reason, send = "send", true
 				}
 			}
-			if v.Start < 0 || v.Start > e.Now || v.TimedAfter != timed || v.RecoveryAfter != recovery || v.Missed != max(int64(0), timed-tb-1) || v.Attempt != attempt || v.Send != send || v.Reason != reason {
+			gateViolation := e.Sequence == c.gateSend && reason == "blocked_link_down" && v.Send && v.Reason == "send"
+			if v.Start < 0 || v.Start > e.Now || v.TimedAfter != timed || v.RecoveryAfter != recovery || v.Missed != max(int64(0), timed-tb-1) || v.Attempt != attempt || (!gateViolation && (v.Send != send || v.Reason != reason)) {
 				return invalid("retry decision contradicts schedule")
+			}
+			if gateViolation {
+				addImpl(false, e.Sequence)
 			}
 			addImpl(v.TimedAfter <= 5 && v.RecoveryAfter <= 1 && v.Missed >= 0 && v.GlobalAfter >= 0 && v.NeighborAfter >= 0 && v.Deadline == 30000 && (!v.Send || v.Attempt && v.Reason == "send" && e.Now < 30000), e.Sequence)
 			if v.Attempt {
@@ -487,13 +493,13 @@ func assessSemantics(c semanticContract, events []ScenarioEvent, res ScenarioRes
 				dropped[v.Matched] = true
 				m.FaultHits++
 			case "down":
-				if c.fault.Kind != "down" || downAt >= 0 || e.Now > 1000 {
+				if c.fault.Kind != "down" || downAt >= 0 || (!c.reviewedGate && e.Now > 1000) {
 					return invalid("down barrier")
 				}
 				downAt = e.Now
 				m.FaultHits++
 			case "up":
-				if downAt < 0 || upAt >= 0 || e.Now != downAt+5000 {
+				if downAt < 0 || upAt >= 0 || (!c.reviewedGate && e.Now != downAt+5000) {
 					return invalid("up barrier")
 				}
 				upAt = e.Now
@@ -528,7 +534,11 @@ func assessSemantics(c semanticContract, events []ScenarioEvent, res ScenarioRes
 	}
 	addImpl(m.Origin == 1 && m.Custody == 1 && m.Destination == 1 && m.DeliveryA == 1 && m.DeliveryB == 1 && m.ReleasedB == 1, endSequence)
 	addImpl(len(decisions) == 0, endSequence)
-	if c.fault.Kind != "none" {
+	if c.fault.Kind == "none" {
+		if m.FaultHits != 0 {
+			return invalid("unexpected fault")
+		}
+	} else if c.fault.Kind != "down" || !c.reviewedGate {
 		if m.FaultHits != 1 {
 			if triggerCount > 0 {
 				envOK = false
@@ -540,8 +550,6 @@ func assessSemantics(c semanticContract, events []ScenarioEvent, res ScenarioRes
 		if c.fault.Kind == "down" {
 			addImpl(downAt >= 0 && upAt == downAt+5000, endSequence)
 		}
-	} else if m.FaultHits != 0 {
-		return invalid("unexpected fault")
 	}
 	for seq := range written {
 		if !consumed[seq] && !dropped[seq] && !aborted {

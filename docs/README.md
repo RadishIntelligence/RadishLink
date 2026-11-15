@@ -2,6 +2,8 @@
 
 `docs/` 是 RadishLink 的正式产品、架构与决策来源。新任务先读取当前状态，再进入对应专题；研究资料只提供证据，不自动成为产品承诺。
 
+整体规划、大专题、子专题与实施 / 验收关系见[能力地图](topics.md)；原目录、编号和正式来源保持，近期顺序仍由 current 维护。
+
 ## 默认入口
 
 - [当前状态](status/current.md)：当前阶段、已确定事项、风险与下一步。
@@ -13,10 +15,20 @@
 ## 架构与协议
 
 - [系统架构](architecture/system-architecture.md)
+- [Node 服务架构与关键选型方案](architecture/node-service-design.md)：已接受 D1—D5 的服务基线及事务恢复、接口、部署和剩余评审。
 - [最小文字闭环实现前设计](architecture/minimal-text-slice.md)：待评审的用户路径、事务边界与失败矩阵。
 - [网络与路由](architecture/network-and-routing.md)
 - [覆盖层消息交付语义](protocol/message-delivery-semantics.md)
+- [Node 新活动生命周期与重新配对评审包](architecture/node-activity-lifecycle.md)：D17 同 boot 与 D18 跨 boot 写域、显式迁移及有界归档。
+- [Node 外发遍历与状态拥有者接线工作包](architecture/node-outbound-owner.md)：有界候选与同步离线周期、批次及发送交接消费者合同。
+- [Node 状态拥有者资源账本](architecture/node-owner-resource-ledger.md)：队列、字节、在途归属及真实接线前的资源与拒绝证据。
+- [Node 有界输入与通道关闭](architecture/node-bounded-ingress.md)：已认证实例的读取额度、下游拒绝、关闭确认与验收前置。
+- [Node 数据 envelope](protocol/node-data-envelope.md)：不可变核心、MLS AAD、保守时间与 D15 已接受参数。
+- [Node 控制传播预算](protocol/node-control-propagation.md)：退出/报告有界转发、逐跳确认与 D16 已接受容量取舍。
 - [安全架构](security/security-architecture.md)
+- [Node 安全接入设计](security/node-security-integration.md)：D6—D10 的联合事务、证明、撤销与跨 boot 边界。
+- [Node 身份与控制 profile](security/node-identity-control-profile.md)：活动绑定、撤销权限、COSE 精确约束与 D11—D14 已接受基线。
+- [Node 控制证明依赖评审准备](security/node-control-dependency-review.md)：候选版本、固定源码证据、完整图与采用前缺口。
 - [端到端加密候选评审](security/e2ee-candidate-review.md)
 - [`SW-G2` E2EE 与身份候选决策包](security/e2ee-sw-g2-decision-package.md)
 - [媒体与 QoS](protocol/media-and-qos.md)
@@ -26,9 +38,24 @@
 
 - [硬件策略](hardware/hardware-strategy.md)
 - [低成本硬件验证计划](hardware/hardware-validation-plan.md)
+- [HW1 Armbian 固定镜像验签操作包](hardware/hw1-armbian-image-verification.md)
+- [HW1 设备与 BSP 预检评审](hardware/hw1-hw-g1-review.md)
 - [原型采购清单](hardware/poc-purchase-list.md)
 - [无线电合规前置条件](regulatory/radio-compliance.md)
 - [外场验证计划](testing/field-validation-plan.md)
+- [Node 第一批服务与事务基础](testing/node-service-foundation.md)：固定依赖、SQLite 联合事务、离线故障验证及生产接入边界。
+- [Node 服务运行可靠性](testing/node-service-reliability.md)：生命周期、迁移、周期维护、安全接入核对与 Store 锁并发诊断/修复。
+- [Node 活动生命周期与有界归档](testing/node-activity-lifecycle.md)：D17/schema v8 与 D18/schema v9 的活动隔离、迁移、域转换及失败恢复。
+- [Node 控制入站准入与有界验签等待](testing/node-control-ingress.md)：邻居/全局限速、16 个等待及在途对象、任务关联与原子验证后接纳。
+- [Node 共享控制外发额度与责任轮转](testing/node-outbound-scheduling.md)：schema v7、混合控制计费、持久轮转、数据 ACK 次数及迁移故障验证。
+- [Node 业务责任与控制政策关联](testing/node-business-policy.md)：schema v6、精确凭据准入、政策修订、撤销停止与证明清理。
+- [Node D15 数据持久化与保守时间](testing/node-data-persistence.md)：schema v5、完整身份/原始 core、uint64 epoch、可信 UTC 区间及显式迁移。
+- [Node D16 控制持久化与尝试预算](testing/node-control-persistence.md)：schema v4、固定预留、活动/对象/邻居责任与离线迁移故障验证。
+- [Node 证明生命周期与恢复边界](testing/node-receipt-lifecycle.md)：提交后证明意图、schema v3、原消息截止时间与离线故障验证。
+- [Node 安全候选新图精确评审包](testing/node-security-graph-review-package.md)：固定输入、G1/G2 命令与来源/资源/证据合同，非执行授权。
+- [Node 有线传输候选锁解析评审](testing/node-wired-graph-resolution.md)：Tokio/rustls 的固定解析输入、隔离前置与锁文件差量验收。
+- [Node 安全接入与 Linux ARM64 验收准备](testing/node-security-integration-acceptance.md)：T-C/T-D 合成故障验证、实际安全用例与接线证据清单。
+- [Node 帧边界与新图离线输入验证](testing/node-framing-and-graph-inputs.md)：D15 接收缓存/超时实现、G0 输入准备与尚未满足的真实运行前置。
 - [三节点软件探索与验证规范](testing/t0-p0-software-validation.md)
 - [`SW-EXP-002` OpenMLS 受限 spike 执行授权包](testing/sw-g2-openmls-spike-authorization.md)：Phase A / Phase B 合同与历史结果。
 - [`SW-EXP-003` mls-rs 0.56.0 静态门禁与执行授权包](testing/sw-g2-mls-rs-spike-authorization.md)：候选静态门与停止条件。
@@ -58,6 +85,12 @@
 
 ## 决策记录
 
+- [2026-11-10 收口规划与阶段衔接](status/2026-11-10-progress.md)：台架/安全决策顺位、有线 P0 依赖与离线收尾边界。
+- [2026-11-08 开发回顾与接续事项](status/2026-11-08-progress.md)：当天全部提交、Node 代码与文档核对、下一步及日终交接。
+- [2026-11-02 开发回顾与接续事项](status/2026-11-02-progress.md)：当天提交、锁与 v9/外发代码的文档核对、下一步及日终交接。
+- [2026-10-28 开发回顾与接续事项](status/2026-10-28-progress.md)：当天全部提交、v8 代码与文档核对、下一步及日终交接。
+- [2026-10-24 开发回顾与接续事项](status/2026-10-24-progress.md)：当天提交、Node 代码与文档核对、新图执行前置及下一步建议。
+
 - [2026-10-18 开发回顾与接续事项](status/2026-10-18-progress.md)：当天全部提交、代码与文档核对、路线 A 资源门及接下来的事项。
 
 - [2026-10-13 开发回顾与接续事项](status/2026-10-13-progress.md)：当天全部提交、I5 准备链代码与文档核对、离线验证边界及后续事项。
@@ -70,6 +103,12 @@
 - [ADR 0001：主机、长距无线与近距接入基线](adr/0001-radio-and-host-baseline.md)
 - [ADR 0002：分离无线承载层与 RadishLink 覆盖层](adr/0002-underlay-overlay-separation.md)
 - [ADR 0003：分支、PR 与 Ruleset 治理](adr/0003-branch-pr-and-ruleset-governance.md)
+- [ADR 0004：Node 服务、事务与本地数据基线](adr/0004-node-service-foundation.md)
+- [ADR 0005：Node 安全接入、撤销与证据寿命](adr/0005-node-security-integration.md)
+- [ADR 0006：Node 活动身份与控制证明 profile](adr/0006-node-identity-and-control-profile.md)
+- [ADR 0007：Node 数据 envelope 与控制传播预算](adr/0007-node-envelope-and-control-budget.md)
+- [ADR 0008：Node 活动作用域与有界归档](adr/0008-node-activity-lifecycle.md)
+- [ADR 0009：Node 跨 boot 时钟域与新活动](adr/0009-node-clock-domains.md)
 
 ## 协作与治理
 
