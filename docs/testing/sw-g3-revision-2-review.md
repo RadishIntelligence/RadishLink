@@ -1,6 +1,6 @@
 # SW-G3 实现前修订评审包
 
-- 状态：Draft，待 SW-G3 专题评审；不是已接受参数或运行授权
+- 状态：整体修订仍为 Draft。首轮合成矩阵的 variant、观察窗及样本数已有有限裁决，见[所有者裁决](#首轮合成矩阵所有者裁决2026-11-15)。
 - 日期：2026-09-26
 - 目标读者：消息实现、测试与安全评审者
 - 基线：[SW-G3 1.0 与勘误](sw-g3-deterministic-validation-design.md)
@@ -8,7 +8,7 @@
 
 ## 推荐决定与版本边界
 
-本包把 2026-09-05 的五项勘误落实为候选规则。原设计和四个 SW-V0 profile 保持原样；本包尚未接受，不能用它执行正式场景或声称勘误已关闭。
+本包把 2026-09-05 的五项勘误落实为候选规则。原设计和四个 SW-V0 profile 仍为既有证据的解释依据。整体修订和正式场景各依其评审与授权推进。
 
 | 对象 | 建议修订 | 兼容与消费者 |
 | --- | --- | --- |
@@ -58,7 +58,7 @@
 
 ### `SW-V1-DOWN-BC-001` version 2 事件表
 
-run 观察窗仍为 `30000 ms`，origin lifetime 仍为 `30000 ms`。B custody 提交后，harness 在 B 首次 forward 前设置事件屏障：关闭 bc，随后释放发送动作，以此时刻为 `t_d = 0`。必须在 run 起点后 `1000 ms` 内到达屏障；已证明环境/屏障失效为 INVALID，环境有效但被测实现未按时提交 custody 为 FAIL，不能平移观察窗或把实现失败包装成准备失败。
+run 观察窗和 origin lifetime 均为 `30000 ms`。harness 在 B 首次接纳 A 数据的批次开始前关闭 B→C 发送 gate，并将 down 事件交给该批。该批须提交 T-B custody 且首次转发槽受阻，才确认屏障命中。下表以该批实际逻辑时刻 `t_d` 为相对零点。屏障须在 origin 后 `1000 ms` 内达成。环境有效、合格输入已入批而实现未按时提交 custody 为 FAIL；已有合格触发而注入设施失效为 INVALID。观察窗仍从 origin 起算。
 
 | 相对 t_d 时间 | 事件 | 期望 |
 | --- | --- | --- |
@@ -109,7 +109,7 @@ run 观察窗仍为 `30000 ms`，origin lifetime 仍为 `30000 ms`。B custody �
 
 ## 接受条件与下一步
 
-评审者须逐项确认：初次发送和恢复额度；custody 后责任/调度；deadline 同时事件排序；长度字段与数值；新 schema 与 profile 映射；单故障和乱序输入；消费者及兼容拒绝测试。接受记录应填写日期、责任人、所选规则和剩余阻塞；本包当前均待评审，不以文档检查通过代替接受。
+评审者须逐项确认：初次发送和恢复额度；custody 后责任/调度；deadline 同时事件排序；长度字段与数值；新 schema 与 profile 映射；单故障和乱序输入；消费者及兼容拒绝测试。已裁决范围、日期、责任人及剩余阻塞见[所有者裁决](#首轮合成矩阵所有者裁决2026-11-15)。
 
 随后才能根据[文字闭环设计](../architecture/minimal-text-slice.md)编制精确 SW-G4 实施包，固定文件、schema 全字段、错误分类、命令、资源上限、运行次数和清理。单元测试、正式 Docker run 与 SW-V3 分别受其前置约束；本轮不执行任何一项。
 
@@ -141,10 +141,68 @@ run 观察窗仍为 `30000 ms`，origin lifetime 仍为 `30000 ms`。B custody �
 
 评审时逐项记录接受的规则、测试 variant、profile 版本和评审责任。首轮可先确认 BASE、两段丢证及两段断链的规则和观察窗。RATE、REORDER 与 V2 负例保留原义务，分别完成设计和试验。正式运行继续使用各自的精确授权和记录。
 
-本轮在 macOS arm64 用 Go 1.26.3 复跑四个现有离线测试包，均通过。首次运行退出 1，沙盒拒绝读取默认 Go build cache。复验使用仓库内忽略的专用缓存，源码、profile 与测试断言保持原样。以下命令在 `tools/t0/` 执行，运行范围限于包内离线测试。
+上述规则核对在 macOS arm64 用 Go 1.26.3 复跑四个现有离线测试包，均通过。首次运行退出 1，沙盒拒绝读取默认 Go build cache。复验使用仓库内忽略的专用缓存，源码、profile 与测试断言保持原样。以下历史命令在 `tools/t0/` 执行，运行范围限于包内离线测试。
 
 ```sh
 GOCACHE="$(git rev-parse --show-toplevel)/.cache/sw-g3-review/go-build" \
   GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off \
   go test -count=1 -timeout=120s ./internal/delivery ./internal/harness ./internal/synthetic ./cmd/sw-v0-harness
 ```
+
+### 首轮五用例设计评审（2026-11-15）
+
+首轮正式合成矩阵采用现有 I5 `i3-small4-tcp-v1`（`docker-tcp-i3`，`security_mode=synthetic`），profile schema 与 evidence schema 均为 3。I4 `i3-small4-offline-v1`（`offline-i3`）的两项 schema 均为 2，作为同用例的离线对照。下表的 v1/v2/v3 是各 ID 自身的 `profile_version`。评审基线为 `2e2f888`。 [I4 profile](../../tools/t0/profiles/i4) · [I5 profile](../../tools/t0/profiles/i5)
+
+| 用例 | Profile ID | I4 / I5 profile version | 固定 seed | 子用例（payload） |
+| --- | --- | --- | --- | --- |
+| 正常送达 | `SW-V1-BASE-001` | v2 / v3 | `0x524c535747330201` | `p1`（1 B）、`p1024`（1 KiB）、`p16384`（16 KiB） |
+| C→B 首份送达证据丢失 | `SW-V1-LOSS-EVIDENCE-001` | v2 / v3 | `0x524c535747330205` | `p1024` |
+| B→A 首份送达证据丢失 | `SW-V1-LOSS-EVIDENCE-BA-001` | v1 / v2 | `0x524c53574733020e` | `p1024` |
+| AB 单向断链 | `SW-V1-DOWN-AB-001` | v2 / v3 | `0x524c53574733020c` | `p1024` |
+| BC 单向断链 | `SW-V1-DOWN-BC-001` | v2 / v3 | `0x524c53574733020b` | `p1024` |
+
+**共同观察窗。** 每个独立样本在自检通过后于逻辑 `0 ms` 创建单条消息（初始 hop 预算 2）。送达及关联提交须在原 deadline `30000 ms` 前完成，继续观察至 `30000 ms` 的到期结算及三节点快照。两条断链另在 `[t_d, t_d+5000 ms)` 检查指定方向并在右端点恢复，断链、补发或提前送达均不改观察窗。I5 固定每方向 `50 ms` 是逻辑入批延迟，实际 socket 耗时和宿主操作截止分别记录。 [I5 监督时钟与批次屏障](sw-g4-synthetic-i5-plan.md#监督时钟与批次屏障)
+
+**共同判定。** `PASS` 要求自检、计划命中、下列业务断言、证据校验和与清理均通过。以同一 key、核心摘要、保守 deadline 关联 T-A、T-B、T-C 及 A/B 的 T-D，C 只交付一次。A 仅在验证 B 返回的送达证据后提交送达并终止传输责任，B 仅在验证 C 的证据后原子提交终态、tombstone 和 B→A 返回责任并清理传输正文。A/C 历史按各自规则保留。`FAIL` 包括环境有效时实现未产生应有的触发对象、超窗、假送达、重复交付、提前释放、越额、续期、到期后产生新送达或外发、同邻接重发再次扣 hop。`INVALID` 包括自检、时钟、资源前提、注入、证据完整性或清理失效。两类问题同时出现时保留原始实现失败和设施错误。 [SW-G3 判定](sw-g3-deterministic-validation-design.md#pass--fail--invalid) · [I5 证据合同](sw-g4-synthetic-i5-plan.md#evidence-schema-3-与兼容)
+
+#### 正常送达
+
+- **命中与观察。** 三种尺寸独立运行，共同 `0–30000 ms` 窗内全程关闭故障注入，命中数为 0。
+- **PASS / FAIL / INVALID。** `PASS` 须证明 B 在 T-B 后方可回 custody 或转发，C 在 T-C 后方可返回证据，两端各自据此提交 T-D。零初始 token 下，首个定时槽可能因额度不足被消费，按已提交的槽位和实际帧计费判定，允许预算内的重复控制帧。环境有效时任一尺寸缺少提交或违反共同断言为 `FAIL`。注入器意外启用、出现非计划命中，或实际源/目标记录无法对账为 `INVALID`。
+- **已知与待补。** I3 有 1 KiB、16 KiB 的持久路径，I4 三个尺寸各有三次离线比较，I5-I 有三个尺寸的字节流 fixture，V3 写入、校验和三次比较覆盖 `p1024` fixture。正式证据须对每种尺寸绑定实际 TCP 完整写出、ingress、入批、提交和最终快照，并核对编码后全帧字节计费。 [I3 实施记录](sw-g4-synthetic-i3-plan.md#2026-09-26-实施与离线验证记录) · [I5 fixture](../../tools/t0/cmd/sw-v0-harness/process_scenario_test.go)
+
+#### C→B 首份送达证据丢失
+
+- **命中与观察。** 在共同 `0–30000 ms` 窗内，B 对 C→B 第一份完整、匹配固定消息的 delivery frame 在 TCP ingress 后、入批前丢弃一次，以 transfer ID、方向、类型、key、摘要和首帧序号关联完整写出及 drop。B→A 不注入丢证。
+- **PASS / FAIL / INVALID。** `PASS` 须见首帧未入批，B 在获验后续证据前维持 custody 和正文，后续证据来自 C 在 T-C 已提交的原返回队列，预算和起点连续。B 验证后完成 T-D，A 最终验证来自 B 的证据，C 历史始终一条。环境有效时缺首帧、缺后续补发、B 提前释放或 A 未能按窗确认均为 `FAIL`。合格首帧已到注入层却漏丢、错丢、多丢或被放入 B 批次为 `INVALID`。重复 data 可以出现，补发因果按原返回队列核对，无法仅从 duplicate 推定。
+- **已知与待补。** I3 验证单侧丢证后的持久闭环，I4 有该方向的三个离线比较样本，I5-I 有该方向字节流 fixture。正式须保存首帧 write→ingress→drop 与后续 write→ingress→B 入批的两条关联链，并证明 B 在两者之间未清正文或推进送达。 [I3 提交合同](sw-g4-synthetic-i3-plan.md#一条消息的提交与副作用) · [I4 实施记录](sw-g4-synthetic-i4-plan.md#2026-09-26-实施与验证记录)
+
+#### B→A 首份送达证据丢失
+
+- **命中与观察。** 在共同 `0–30000 ms` 窗内，A 对 B→A 第一份完整、匹配固定消息的 delivery frame 在 TCP ingress 后、入批前丢弃一次，关联字段与上一用例相同。B→A custody 与 C→B delivery 不计入或施加该故障。
+- **PASS / FAIL / INVALID。** `PASS` 须见 A 已验证 custody 并暂停 A→B 数据重试，仍保留传输责任。B 在 T-D 删除正文时一并提交送达终态、tombstone 和 B→A 返回责任，丢帧后从同一返回队列按原额度补发。A 只因后续证据验证成功提交送达，C 交付恰好一次。环境有效时缺首帧、清正文后丢失返回责任、以 A 恢复数据重试才换来成功，或 A 未在窗内提交送达均为 `FAIL`。合格首帧进入注入层但漏丢、错丢、多丢或进入 A 批次为 `INVALID`。
+- **已知与待补。** I3 有 B 清正文后保留返回责任的离线证据，I4 有该方向的三个离线比较样本，I5-I 有该方向字节流 fixture。正式须用原始 trace 关联 A 的 custody 暂停、B 清正文及返回责任所在的同一提交、首次丢弃和后续补发，留存到期前快照以证明返回责任。 [I3 提交合同](sw-g4-synthetic-i3-plan.md#一条消息的提交与副作用) · [I5-I 实施记录](sw-g4-synthetic-i5-plan.md#i5-i-实施与离线验证结果2026-09-26)
+
+#### AB 单向断链 5 秒
+
+- **命中与观察。** A 在 `0 ms` 提交 T-A 后、首次 `Step(1)` 的发送决定前关闭 A→B gate，并将 `became_down` 交给该批。以 `t_d=1 ms` 到 `5001 ms` 的逻辑区间作断链检查，恢复批次同步打开 gate 并交付 `became_up`。B→A 保持可用。全程观察至共同的 `30000 ms`。
+- **PASS / FAIL / INVALID。** `PASS` 须见 A 持有原消息，五个定时槽均以 `blocked_link_down` 消费额度，断链期间 A→B 无写出、B 无 T-B/custody、A 无 custody 或 delivery 确认、C 零交付。槽位按 A 队列原计划起点计算，初槽在 `1 ms` 结算。恢复后只消费一次恢复额度，以同 key、核心摘要、原期限和 A→B 副本 hop 发送，再完成共同交付链。环境有效时 T-A 缺失、gate 关闭时取得发送机会、额度重置或恢复超窗为 `FAIL`，即使 gate 拦住误发。合格 T-A 已有而 gate 漏关、错向、晚关或恢复时刻偏离约定为 `INVALID`。
+- **已知与待补。** I1 有重试槽和恢复额度边界，I3 有 AB 断链持久路径，I4 有三个离线比较样本，I5-I 有单向 gate 字节流 fixture。正式须将 T-A、gate 切换、五个阻塞槽与恢复写出绑定到原始控制响应，并用 TCP/ingress 记录、B/C 快照核对零提前副作用。 [I1 离线规则](sw-g4-synthetic-i1-plan.md) · [I5 故障合同](sw-g4-synthetic-i5-plan.md#五-profile七子用例与故障定义)
+
+#### BC 单向断链 5 秒
+
+- **命中与观察。** B 首次接收合格 A→B data 的批次前关闭 B→C gate，向该批注入 `became_down`。以同一批已提交 T-B 且首次 B→C 转发槽被阻塞确认命中，只有关 gate 记录不足以计命中。`t_d` 取该批逻辑时刻，须在 origin 后 `1000 ms` 内；`t_d+5000 ms` 同批恢复 gate 并交付 `became_up`。C→B 和 B→A 保持可用，全程观察至共同的 `30000 ms`。
+- **PASS / FAIL / INVALID。** `PASS` 须见 B 接纳并向 A 返回 custody、保留正文和转发责任，B→C 五个定时槽均以 `blocked_link_down` 消费额度，断链期间无 B→C 写出、C 零交付、A/B 无假送达。恢复后 B 消费唯一恢复额度，按原 key、核心摘要、期限及 B→C 副本 hop 转发，完成共同交付链。环境有效时实现未产生 A→B 输入、合格输入已入批而 T-B 未在 `1000 ms` 内提交、关闭期间取得 B→C 发送机会，或恢复后未按窗交付均为 `FAIL`。合格触发已具备而 gate 的位置、方向、时长或时钟有误为 `INVALID`。
+- **已知与待补。** I3 有 BC 断链持久路径，I4 有三个离线比较样本，I5-I 有对应字节流 fixture。正式须关联该批的 A→B 入批、gate、T-B 提交代际及首次阻塞，核对 B→A custody 可达、恢复前 C 零交付、恢复后沿原邻接写出。I5 监督器从 `link_gate` 生成 fault 事件，V3 校验器核对事件来源和故障时长。正式前须落实对该事件与同批 T-B、首槽阻塞的独立核对。 [I5 事实转换](../../tools/t0/cmd/sw-v0-harness/process_scenario.go) · [V3 证据校验](../../tools/t0/internal/harness/evidence_v3.go)
+
+#### 正式运行前置
+
+1. **证据比较。** 同一子用例的三次证据逐份校验后比较归一化事实，绑定 schema、profile ID/version/hash、seed、variant、子用例、revision、二进制及镜像。任一 `FAIL`/`INVALID` 停止后续样本，保留原因和未运行清单。 [I5 矩阵及停止规则](sw-g4-synthetic-i5-plan.md#五-profile七子用例与故障定义)
+2. **证据与判定。** 正式前核对六个实际拓扑探针（四方向邻接可达、A/C 双向直连不可达）、三进程及独占 store、监督时钟、write/ingress/drop 与提交的原始来源、版本绑定、校验和及清理。落实各用例的因果核对与相应负例，尤其是 BC 关 gate 但尚无同批 T-B、以及 gate 正常关闭时的 `SEND_WHILE_GATE_DOWN`。当前 V3 将控制响应错误计入执行错误，可能把后者汇总成 `INVALID`；正式前须证明环境有效且原始证据确认误发时可按 `FAIL` 留案。 [V3 证据校验](../../tools/t0/internal/harness/evidence_v3.go) · [节点 gate 检查](../../tools/t0/cmd/sw-v0-harness/control.go)
+3. **执行前置。** I5-R 仍在 `I5_RESOURCE_ISOLATION_REQUIRED` 停止。待取得合格宿主、完整 768 MiB 整批硬写入边界、受限构建与 daemon/store 隔离的运行接入及实际拒绝证据，再核准干净 revision、合同及资源附录、profile 与实际产物的绑定和版本兼容方案。精确执行包另行确认命令、资源与时限、失败保留和回收，然后取得当次运行授权。 [I5 资源放行条件](sw-g4-synthetic-i5-resource-isolation.md#下一实施包与放行条件) · [宿主恢复条件](sw-g4-synthetic-i5-linux-host-assessment.md#收口与恢复条件2026-11-10)
+
+#### 首轮合成矩阵所有者裁决（2026-11-15）
+
+项目所有者萝卜SAMA 确认沿用 `i3-small4-tcp-v1`（`docker-tcp-i3`）及上表现有五个 I5 profile。从 origin 的逻辑 `0 ms` 观察至 `30000 ms`。BASE 三种尺寸先各做三次独立样本，通过后按表顺序做四个故障用例各三次，共七个子用例、21 个独立样本。
+
+此裁决仅接受首轮 variant、观察窗及样本规模。BC 同批命中核对及关闭 gate 时误发判 `FAIL` 进入离线实施方案评审。代码与 profile 的实施、真实网络、签验及 I5-R 各待后续授权。其余 SW-G3 修订、HW1 交付证据、SW-G2 许可证评审及上游 Issue 按各自状态推进。 [当前状态](../status/current.md)
