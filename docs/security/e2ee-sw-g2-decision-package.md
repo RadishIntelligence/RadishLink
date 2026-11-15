@@ -287,6 +287,38 @@ cargo build --frozen --release --target aarch64-unknown-linux-gnu --manifest-pat
 
 法律评审与[非实现者 R2](../testing/sw-g2-mls-rs-license-notice-review.md#r2-非实现者复核)的负责人均待指定；R2 另以有效完整的新证据为进入条件。本轮没有外部发送、补证、候选运行或 gate 状态变动。Node 新产品图另走 [G1/G2](../testing/node-security-graph-review-package.md)，实际功能与接线按 [Node 安全接入验收](../testing/node-security-integration-acceptance.md)分别取证。
 
+## 许可证评审交接准备（2026-11-15）
+
+首轮评审限定为所有者控制的 Linux ARM64 合成实验，当前使用范围暂不向他人交付测试镜像或安装包。拟议目标 `aarch64-unknown-linux-gnu` 及固定 feature 组合以现有评审输入为依据。评审先使用对象标识、摘要、来源索引和问题清单。第三方文件和原始取证保存在原目录，材料接收和复制范围由所有者确认。
+
+### 固定对象复核
+
+| 对象 | 本次只读核对 | 可交评审的事实 |
+| --- | --- | --- |
+| D2 与 R1c-R | D2 和 R1c-R 的 manifest、checksum 清单及所列 32 和 69 项分别核对。历史 D2 一开始用当前 `LICENSE` 对比得到差异，改用其固定 revision `64cf079a7b14a3ce90be92b93e56e2ad80555d80` 的原输入后全部匹配。D、D2 和仓库三份 lockfile 逐字一致，均为 94 个 package | D2 保留 `PASS/phase-a-prepared`。R1c-R 保留 `STOP/license-evidence`。[固定 D2 基线](../testing/sw-g2-mls-rs-license-notice-review.md#固定-d2-基线) · [R1d-L 完整性复核](../testing/sw-g2-mls-rs-license-disposition-review.md#冻结输入与完整性复核) |
+| `debug_tree 0.4.0` | 保留的 `.crate` SHA-256 与 lock/原 mapping 相同，包内 VCS 指向 `5b709de2d8872102b20b566c408d31d0662d7a9f`。D2 的 `mls-rs/std` 启用该依赖，边无 target 条件 | 固定源码仍缺适用的完整 MIT notice、holder/年份及第三方例外说明。[冻结对象](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#冻结对象与已知缺口) |
+| `r-efi 6.0.0` | 保留的 `.crate` SHA-256 与 lock/原 mapping 相同，包内 VCS 指向 `7e1b0322d31d625f81a5656096330934f9cd835d`。`AUTHORS` 在归档、R1c decoded 文件及固定 blob 中逐字一致，SHA-256 为 `d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111` | `AUTHORS` 包含完整 MIT 文本及归属。D2 中唯一依赖边来自 `getrandom 0.4.3`，条件为 `cfg(all(target_os = "uefi", getrandom_backend = "efi_rng"))`。目标二进制、构建期复制品和留存材料需分别核对。[固定包校验值](../testing/sw-g2-mls-rs-license-notice-review.md#r0-离线许可证缺口盘点) · [处置评审](../testing/sw-g2-mls-rs-license-disposition-review.md#r-efi-600-处置) |
+
+### debug_tree 公开 Issue 预审
+
+唯一拟发送目标为 `martypapa/debug-tree` 的 GitHub Issues。冻结标题为 `License notice clarification for debug_tree 0.4.0`。预审应使用[冻结标题和正文](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#冻结标题)；正文询问固定发布的完整 MIT notice、holder/年份、第三方例外及追溯适用，并请求官方仓库中的不可变引用。
+
+[离线 helper 检查](../../scripts/check-sw-g2-mls-rs-license-upstream-clarification.sh)及针对准备基线 `65d11be1964d6785f0cd8597ada79af45f85beb3` 的[本地 preflight](../../scripts/run-sw-g2-mls-rs-license-upstream-clarification.py)均通过，已核对冻结文档、逐字消息摘要和 R1c 对象。进入下一轮前，所有者需给出对外显示的 GitHub login 并逐字确认标题与正文。实际发帖需对届时洁净的 revision 和唯一目标取得一次性 X 授权，再由原合同检查登录身份、仓库、固定 commit、Issues 可用性和等价条目。回复收集 R 及接受性另按原合同处理。[外部写入合同](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#外部写入合同) · [回复接受标准](../testing/sw-g2-mls-rs-debug-tree-upstream-clarification-plan.md#回复接受标准)
+
+### r-efi 独立法律评审请求草稿
+
+> 请评估 `r-efi 6.0.0` 在 RadishLink 所有者控制的 Linux ARM64 合成实验中的许可选项。评审对象以本节固定 commit、crate checksum 和 `AUTHORS` 摘要为准。D2 的跨目标依赖图包含本包，记录的依赖边仅适用于特定 UEFI 配置。当前尚无目标二进制、SBOM 或实际复制清单。
+>
+> 1. 如果最终 Linux ARM64 二进制的构建图、链接清单和包内容均排除本包，针对该二进制及其预期使用范围，请说明结论与所需证明。
+> 2. 如果准备、构建或复现过程中会复制或留存 `.crate`、解包源码、vendor、含本包的 registry/build cache 或容器内容，请按实际类别分别判断是否可以选择 MIT 分支。请明确完整 `AUTHORS` 的保留或随附方式、归属、NOTICE 及对修改副本的要求。
+> 3. 请注明适用对象、渠道、假设与限制，并列出必须补的证据。如果现有事实只支持条件性意见，请明确触发条件。如果不能接受该 MIT 路线，请指出缺少的官方材料或需调整的范围。
+
+所有者先指定独立法律评审者、私下交接渠道和材料范围。首份交接使用本节、固定依赖边及 `AUTHORS` 来源/摘要索引。若评审者需要查阅原文或归档，再逐项确认可阅或可复制材料和留存安排。工程侧仍需补实际操作者、目标与构建方式、artifact 以及归档、源码、vendor、cache 和镜像的实际复制/保留清单。可先就列明的假设取得条件性意见，实际产物与假设一致后再确认适用范围。[首份评审材料及复制边界](#首份评审材料及复制边界2026-11-08)
+
+### 收口条件
+
+本轮完成本地检查和材料准备，外部请求和第三方文件交付均待相应授权。R1d-L 仍为 `STOP/license-disposition`。`r-efi` 的法律评审若接受 MIT 路线，先设计 R1d-G，待该轨通过后设计 R1d-D。若评审要求其他许可证材料，则按原处置评审准备 R1d-E。两包须沿新证据合同取得有效完整的 `PASS` 才进入另获授权的 [R2 非实现者复核](../testing/sw-g2-mls-rs-license-notice-review.md#r2-非实现者复核)。Phase B 与 SW-G2 仍在等待。
+
 ## Node 联合事务接入源码核对（2026-10-24）
 
 本节是 Node 服务运行可靠性任务中的只读工程核对，不是完整安全审计、许可证补证、R2 或 Phase B。实际读取 D2 run `20260902-130415-49997.8P5Td6` 留存的三个 crate 及解包源码；没有执行其 Cargo、复用该缓存构建、改动 archive、provider 或历史 evidence。三个归档 SHA-256 均与仓库固定 lock 一致，所读核心源码又与归档对应 entry 逐字比较一致：
