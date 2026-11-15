@@ -1,7 +1,7 @@
 # HW1 设备与 BSP 预检评审
 
 - 日期：2026-11-15
-- 状态：评审材料已整理，待确认交付规格与剩余 BSP 前置。仓库当前为 `HW-G0`
+- 状态：公开交付资料已复核，固定 BSP 来源和 Mac 串口准备路径已补录。实际交付规格仍待确认，仓库当前为 `HW-G0`
 - 范围：三台 ZERO 3E 2GB 的纯有线台架，供 HW-G1 评审及后续 HW-G3 编制执行包
 - 依据：[固定镜像离线验签](hw1-armbian-image-verification.md#离线验签记录2026-11-15) · [镜像静态核对](hw1-armbian-image-verification.md#静态兼容性核对结果2026-11-15) · [HW1-01–08 既有用例](hardware-validation-plan.md#到货后的验收顺序)
 
@@ -15,6 +15,36 @@
 | 固定 OS / BSP | Armbian 26.8.1 Minimal、Debian 13 arm64、`6.1.115-vendor-rk35xx`，验签及镜像内 DTB、驱动、引导链已核对。[固定输入与证据](hw1-armbian-image-verification.md#固定输入与官方主钥) | 评审者确认固定镜像的隔离台架用途。按既有 HW-G1 范围核对内核、U-Boot、板级包、固件版本的来源、许可、更新和维护归属。镜像、版本或用途变化时重新绑定证据 |
 
 走 HW-G2 时，沿[已有成本复核](poc-purchase-list.md#hw1-决策成本复核2026-11-15)核对差额、税运、交付和退换条件。首轮到手加预留须落在 2000 元以内，整套累计硬上限为 3000 元。
+
+### 公开交付资料复核（2026-11-15）
+
+- Arace 的 2GB 商品数据将 variant `42572748325044` 绑定到 `RS109-D2E0H1`，本次该 variant 显示不可售。京东 2GB 和淘宝公开入口未给出能绑定三台交付的 PCB 版号。Radxa V1.2 硬件资料可用于核对丝印和接口，实际版号仍由交付证据确认。[Arace 2GB 商品数据](https://arace.tech/products/radxa-zero-3e.js) · [京东 2GB 入口](https://i-item.jd.com/10123797922358.html) · [淘宝入口](https://item.taobao.com/item.htm?id=763867803082) · [Radxa 3E V1.2 资料](https://docs.radxa.com/zero/zero3/download)
+- 微雪公开资料列 RTL8153，国内商品接口未返回硬件版号或 USB 枚举字段。`0bda:8153` 继续作为固定镜像驱动别名的匹配预期，交付批次与枚举仍待确认。[微雪产品规格](https://www.waveshare.com/wiki/USB_3.2_Gen1_TO-Gigabit_ETH) · [国内商品数据](https://api.waveshare.net/api/v1/goods/1379)
+
+所有者核对交付时可使用下面两条。此次只读公开资料。
+
+1. 这三块能否按 ZERO 3E 2GB 带排针、料号 `RS109-D2E0H1`、相同 PCB revision 交付？请标明版号或提供对应批次的丝印照片，并确认无替代发货。
+2. 网卡是否为 `20162`、RTL8153？能否提供该批次的硬件版号和通用 USB 枚举记录，例如 VID/PID、`bcdDevice`？如没有枚举记录，请确认实物规格不符时的退换条件，供评审者决定是否到货复核。
+
+## 固定 BSP 来源复核
+
+从已验签镜像只读取得包状态、changelog、版权文件和 APT 配置。镜像写入的构建短标识映射到公开 Armbian Build 提交 `de5fd0aeb69d1670f8d2894c4f06cca931feba9b`。下列依据用于固定版台架评审，重建完整镜像仍需逐项绑定全部构建输入和补丁。[Armbian 固定构建提交](https://github.com/armbian/build/commit/de5fd0aeb69d1670f8d2894c4f06cca931feba9b)
+
+| 组件 | 本次绑定与来源 | 许可和维护边界 |
+| --- | --- | --- |
+| 内核、DTB 与板级包 | 采用固定构建提交的 ZERO 3 和 rk35xx vendor 配置。镜像内的内核/DTB 包版本为 `26.8.1`，内核版本为 `6.1.115-vendor-rk35xx`。镜像内核制品标识的 `S5280` 与构建脚本的 Git 前缀字段对应，在构建前的 `rk-6.1-rkr5.1` 历史定位到 `5280f9b4336199c4025c8eed894d2b4e2268dcc6`，其 Makefile 版本为 6.1.115。构建配置还指定 `rk35xx-vendor-6.1` 补丁目录。板级包 `armbian-bsp-cli-radxa-zero3-vendor` 为 26.8.1。[固定构建配置](https://github.com/armbian/build/blob/de5fd0aeb69d1670f8d2894c4f06cca931feba9b/config/sources/families/rk35xx.conf) · [内核源码](https://github.com/armbian/linux-rockchip/tree/5280f9b4336199c4025c8eed894d2b4e2268dcc6) | 内核和 DTB 包内版权说明引用 GPL v2，与上游 [COPYING](https://github.com/armbian/linux-rockchip/blob/5280f9b4336199c4025c8eed894d2b4e2268dcc6/COPYING) 一并留证。Armbian Linux 为已装包维护者。成品补丁应用与板级包完整材料仍按未来实际更新或交付范围复核 |
+| U-Boot、DDR 与 BL31 | U-Boot v2025.10 上游提交 `e50b1e8715011def8aff1588081a2649a2c6cd47` 由包内元数据直接标识。RkBin 参考提交 `ce50c0d1ad1d4630f5b595d317427b56fa97b7f6` 的 `rk3566_ddr_1056MHz_v1.21.bin` 全文件匹配打包产物中的 DDR 字节，`rk3568_bl31_v1.44.elf` 六个非空装载段也与打包产物对应数据一致。[U-Boot 固定源码](https://github.com/u-boot/u-boot/tree/e50b1e8715011def8aff1588081a2649a2c6cd47) · [Armbian RkBin 参考提交](https://github.com/armbian/rkbin/tree/ce50c0d1ad1d4630f5b595d317427b56fa97b7f6) | 分别保留上游 [U-Boot 许可说明](https://github.com/u-boot/u-boot/blob/e50b1e8715011def8aff1588081a2649a2c6cd47/Licenses/README) 与 [RkBin 厂商条款](https://github.com/armbian/rkbin/blob/ce50c0d1ad1d4630f5b595d317427b56fa97b7f6/LICENSE.TXT)。RkBin 的结论覆盖已匹配的二进制字节，整套引导制品仍随 Armbian 的已装 U-Boot/板级包评审 |
+| `r8152` 所需固件 | 已装 `armbian-firmware` 为 26.8.1。制品字段 `SAd984` 对应 Armbian 固件 Git 前缀，在构建前历史定位到 `d9846710f54da5e4383e2d67311819659ac2cf5c`。镜像中模块声明的七个 `rtl_nic` 文件均与该提交及 linux-firmware 固定引用逐字节一致。[Armbian 固定固件目录](https://github.com/armbian/firmware/tree/d9846710f54da5e4383e2d67311819659ac2cf5c/rtl_nic) | 上游 [WHENCE 与归属](https://kernel.googlesource.com/pub/scm/linux/kernel/git/firmware/linux-firmware.git/+/ccc21e6c929735cd0b55c7c892062dedca2c47d9/WHENCE) 逐个列出七个文件，并指向 [Realtek 许可文本](https://kernel.googlesource.com/pub/scm/linux/kernel/git/firmware/linux-firmware.git/+/ccc21e6c929735cd0b55c7c892062dedca2c47d9/LICENCE.rtlwifi_firmware.txt)。该证据覆盖 RTL815x 固件使用范围 |
+
+镜像内 `armbian.sources` 指向 Armbian trixie 仓库，以镜像内 Armbian keyring 作 `Signed-By`；Debian 基础包配置独立的 Debian trixie、updates、backports 和 security 来源。已读取这些配置作更新来源记录，未执行 APT、当前索引验签或升级。评审固定隔离用途时以已验签版本为基线。后续若引入更新，单列仓库签名链、精确版本差量与启动/网口/恢复回归。[Armbian 包仓库说明](https://docs.armbian.com/status/package-repository/)
+
+## Mac 串口准备路径
+
+主体路线为到货后先核对 macOS 现有驱动，再使用固定的 pySerial 3.5 隔离环境做 UART 回环。Mac 本机为 macOS 27.0.1 arm64、Python 3.14.5，PATH 未见 `picocom` 或 `minicom`，当前解释器无 pySerial，`termios` 无 `B1500000`。已从 PyPI 复核 90585-byte wheel 的实际文件 SHA-256 为 `c4451db6ba391ca6ca299fb3ec7bae67a5c55dde170964c7a14ceefec02f2cf0`，28 个 `serial/` Python 模块在 Python 3.14.5 下均可静态解析，Darwin 路径使用 `IOSSIOSPEED` 请求自定义波特率。导入、驱动绑定和 1.5 Mbaud 实际收发仍待执行。[PyPI 固定 wheel](https://pypi.org/project/pyserial/3.5/#files) · [Darwin 实现](https://github.com/pyserial/pyserial/blob/0e7634747568547b8a7f9fd0c48ed74f16af4b23/serial/serialposix.py)
+
+1. 到货后先核对 CH343 `21442` 适配器的实际 VID/PID、USB 接口模式，以及同一次插拔出现的唯一 `/dev/cu.*` 节点。若现有 macOS 驱动未提供可绑定的串口，按[已有 WCH 驱动评审](hardware-validation-plan.md#mac-串口的来源与判定)核对当前系统支持、签名、公证和卸载方式，再决定是否进入单独的安装授权。
+2. 工具安装获准后，把核对过摘要的 wheel 用 `pip --no-index --no-deps` 安装到独立的临时 Python 环境。先记录 Python 与 pySerial 版本并核对终端入口，测试参数固定为 `serial.tools.miniterm`、实际唯一串口、`1500000`、8N1、无软硬件流控。该工具留在宿主配置阶段，来源与许可证见[pySerial 固定源码](https://github.com/pyserial/pyserial/blob/0e7634747568547b8a7f9fd0c48ed74f16af4b23/LICENSE.txt)。
+3. 板卡未连接时先验证适配器的 3.3 V TTL 和回环。仅在合成输入完整回显后进入 `HW1-02`。无法设置速率、丢字、乱码、端口对应不清时保留诊断，先处置串口路径。上板首启仍要实际核对 U-Boot、`ttyS2`、`ttyFIQ0` 与无 DHCP 交互。
 
 ## 上板验收条件
 
@@ -31,6 +61,8 @@
 沿用现有 HW1 manifest 冻结样本数、观察超时、并行探针窗口和恢复时限，并记录镜像摘要、脱敏硬件标签、端口与卡映射、预期结果、日志、结束状态和失败处置。三台分别保留启动、串口与备卡证据。试验中的单节点和整台架断电范围仍按 `HW1-05` 单独标明。启动日志、终端记录和照片不得保留凭据或真实通信。
 
 ## 评审收口
+
+本轮建议保留现有候选，等待板卡和网卡交付证据。板卡需绑定三台同版的交付范围；网卡若只能在到货后枚举，先由评审者明确可接受的交付和退换条件。固定 BSP 按隔离台架用途评审，Mac 的驱动绑定与回环纳入 HW-G3 前置。
 
 - **继续候选评审**：交付版号和网卡规格有可复核证据，评审者接受镜像与 BSP 剩余风险，明确采购前缺口及上板取证安排。上板验收须具备设备及 HW-G3 执行授权。
 - **等待**：卖家版号未落实、网卡交付范围不清、串口准备方式或 BSP 证据仍缺。记录缺项、责任方及重新评审的触发条件。
