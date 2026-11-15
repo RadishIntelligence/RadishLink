@@ -125,3 +125,26 @@ run 观察窗仍为 `30000 ms`，origin lifetime 仍为 `30000 ms`。B custody �
 | 时钟/内存状态可恢复不等于掉电事务成立 | 首个实施单元只验证算法及值对象，持久化格式、时钟重建与掉电证据继续阻塞 |
 
 结论：推荐先实施[离线重试与长度边界单元 I1](sw-g4-synthetic-i1-plan.md)，本轮已固定其可审阅范围；整体 SW-G3 修订和文字闭环仍为 Draft。I1 不需要先启用新 JSON schema，也不关闭正式 V1/V2 的实施/运行门。
+
+## P0 首轮合成场景规则核对（2026-11-15）
+
+评审对象为 SW-G3 正式合成场景的规则和参数。已有证据取自 [I1–I5-I 记录](node-security-integration-acceptance.md#已有软件证据的适用范围)，真实三节点取证按 [HW1/P0 证据对照](node-security-integration-acceptance.md#实体台架需要取得的证据)执行。本节仍为评审输入。
+
+| 评审项 | 建议接受的合成规则 | 当前覆盖与待验 |
+| --- | --- | --- |
+| 重试和期限 | 以首次计划时间为起点，初次加四个定时重试，槽位为 0、250、750、1750、3750 ms。同一邻接恢复最多补发一次，与同刻定时槽合并。到达原 deadline 后停止发送。 | I1 覆盖预算、迟到和同刻事件，I3 覆盖已消耗预算的离线恢复。正式用例仍需逐次记录槽位、计费和原 deadline。 |
+| 两段送达证据 | 分别验证 C→B 与 B→A 首个送达证据丢失。C 保留返回责任，B 在清理载荷时一并持久化 B→A 返回责任。A 已暂停数据重试时仍须经既有返回责任收到送达证据，C 仅交付一次。 | 责任边界已有 [D10](../adr/0005-node-security-integration.md#d10证明不超过原消息截止时间) 和 I3–I5-I 合成证据。正式场景仍需分方向留故障命中及返回证据。 |
+| 断链、重启与拓扑 | DOWN-AB 与 DOWN-BC 各只注入一次 5000 ms 单向发送不可用。BC 在 B 首次接纳批次前关发送 gate，以该批 T-B 确已提交且首次转发受阻作为命中证据。节点重启放到独立的 V2 用例。B 是唯一路径，复连只验证原路径恢复。 | I4/I5-I 有该边界的离线覆盖。正式场景待核对故障命中、恢复后同 key 及期限。实体网线断开、USB 重枚举和物理掉电各按 HW1 留证。 |
+| 长度 | 合成正文和不透明载荷的上限各为 16384 B，测试 frame body 上限为 32768 B，外层 4 B 前缀单独计入传输。真实密文上限待固定候选给出编码及认证开销。 | I1/I2 覆盖边界、溢出、截断和分配前拒绝。Rust Node 当前的 65536 B 是整个接收 frame 的上限，包含 4 B 前缀。正式用例须绑定具体入口及计量位置。[Node framing](../../node/src/framing.rs) |
+| RATE 的单位与 burst | 保持 65536 B/s 候选速率及零初始 token，按编码后完整 frame 计费。采用 I3 编码和逐帧准入时，建议仅在新合成 profile 使用 32772 B 数据 burst，即允许一个最大 frame。原 16384 B burst 连最大载荷的 21848 B base64 数据都容纳不下。 | [I3/I4 小容量模式](sw-g4-synthetic-i3-plan.md#发送速率与有限调度)已使用新 burst。BASE 的三种尺寸只覆盖正常路径；正式 RATE 仍须用 1 B、1 KiB、16 KiB 各验证限速命中、实际编码计费及单次交付。 |
+| REORDER 输入 | 用两个不同 key 的消息，记录 B→C 两个对象在相邻窗口内实际互换，并按 key 核对各提交和交付一次。 | I4/I5-I 七子用例中没有该场景，仍需单独绑定输入、故障点和原始证据。 |
+
+评审时逐项记录接受的规则、测试 variant、profile 版本和评审责任。首轮可先确认 BASE、两段丢证及两段断链的规则和观察窗。RATE、REORDER 与 V2 负例保留原义务，分别完成设计和试验。正式运行继续使用各自的精确授权和记录。
+
+本轮在 macOS arm64 用 Go 1.26.3 复跑四个现有离线测试包，均通过。首次运行退出 1，沙盒拒绝读取默认 Go build cache。复验使用仓库内忽略的专用缓存，源码、profile 与测试断言保持原样。以下命令在 `tools/t0/` 执行，运行范围限于包内离线测试。
+
+```sh
+GOCACHE="$(git rev-parse --show-toplevel)/.cache/sw-g3-review/go-build" \
+  GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off \
+  go test -count=1 -timeout=120s ./internal/delivery ./internal/harness ./internal/synthetic ./cmd/sw-v0-harness
+```

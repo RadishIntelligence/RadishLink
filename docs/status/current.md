@@ -1,6 +1,6 @@
 # RadishLink 当前状态
 
-更新日期：2026-11-15（SW-G2 许可证评审准备）
+更新日期：2026-11-15（SW-G3 首轮合成规则核对）
 
 规划导航整理：2026-11-01。[能力地图](../topics.md)连接原工作包、实施切片与验收；导航整理不改变产品或实验结果，11 月 2 日接续见[当前优先级](#当前优先级)。
 
@@ -36,7 +36,7 @@ I1–I5-I 已提交并通过有限离线验证；容量核验和受限双构建 
 | 证据轨 / gate | 当前结论 | 后续缺口与正式记录 |
 | --- | --- | --- |
 | `PLAN-G0 / SW-G0 / SW-G1` | 已接受计划、术语和消息交付语义 | [执行计划](project-execution-plan.md)、[软件计划](d0-t0-p0-plan.md)、[消息语义](../protocol/message-delivery-semantics.md) |
-| `SW-G3` | 1.0 设计已接受；修订未整体接受，Node 证据寿命规则由 ADR 0005 D10 有限接受 | [修订评审包](../testing/sw-g3-revision-2-review.md)补齐证据返回责任与迟到调度规则；原参数和历史证据不变 |
+| `SW-G3` | 1.0 设计已接受；修订未整体接受，Node 证据寿命规则由 ADR 0005 D10 有限接受 | [首轮合成规则核对](../testing/sw-g3-revision-2-review.md#p0-首轮合成场景规则核对2026-11-15)已列重试、送达证据、断链、长度、限速和乱序的待评审规则与覆盖缺口 |
 | `SW-G4 / SW-V0` | 已完成；四个 canonical profile 各三次通过且归一化一致 | 只证明 harness；[正式记录](../testing/sw-g4-sw-v0-harness-authorization.md)不授权重跑或扩展 |
 | 后续 `SW-G4 / I1` | 有限范围已接受，离线算法实施与验证通过 | [I1 记录](../testing/sw-g4-synthetic-i1-plan.md)覆盖重试与长度边界；全量回归先受沙盒缓存权限阻断，获准同命令复验通过；无正式场景结果 |
 | 后续 `SW-G4 / I2` | 有限范围已接受，实施与离线验证通过 | [I2 记录](../testing/sw-g4-synthetic-i2-plan.md)覆盖显式限额、V0 兼容和短写拒绝；全量 vet/test 首次受缓存权限阻断，同命令获准复验通过；[队列/事务接入](../architecture/minimal-text-slice.md#队列与事务的接入设计)仍为候选 |
