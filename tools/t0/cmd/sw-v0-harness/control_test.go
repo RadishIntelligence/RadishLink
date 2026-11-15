@@ -250,6 +250,17 @@ func TestControlMalformedAndOutputErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestControlCloseDistinguishesCleanEOFAndTruncatedRequest(t *testing.T) {
+	ctx := context.Background()
+	n := &nodeActor{}
+	if err := serveNodeControl(ctx, strings.NewReader(""), io.Discard, n); err != nil {
+		t.Fatal("clean control closure", err)
+	}
+	if err := serveNodeControl(ctx, strings.NewReader("{"), io.Discard, n); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatal("truncated control request", err)
+	}
+}
 func TestReadInputRejectsTrailingAndWrongNeighbor(t *testing.T) {
 	for _, bad := range []string{"trailing", "neighbor", "short"} {
 		t.Run(bad, func(t *testing.T) {

@@ -198,7 +198,7 @@ GOCACHE="$(git rev-parse --show-toplevel)/.cache/sw-g3-review/go-build" \
 #### 正式运行前置
 
 1. **证据比较。** 同一子用例的三次证据逐份校验后比较归一化事实，绑定 schema、profile ID/version/hash、seed、variant、子用例、revision、二进制及镜像。任一 `FAIL`/`INVALID` 停止后续样本，保留原因和未运行清单。 [I5 矩阵及停止规则](sw-g4-synthetic-i5-plan.md#五-profile七子用例与故障定义)
-2. **证据与判定。** 正式前核对六个实际拓扑探针（四方向邻接可达、A/C 双向直连不可达）、三进程及独占 store、监督时钟、write/ingress/drop 与提交的原始来源、版本绑定、校验和及清理。落实各用例的因果核对与相应负例，尤其是 BC 关 gate 但尚无同批 T-B、以及 gate 正常关闭时的 `SEND_WHILE_GATE_DOWN`。当前 V3 将控制响应错误计入执行错误，可能把后者汇总成 `INVALID`；正式前须证明环境有效且原始证据确认误发时可按 `FAIL` 留案。 [V3 证据校验](../../tools/t0/internal/harness/evidence_v3.go) · [节点 gate 检查](../../tools/t0/cmd/sw-v0-harness/control.go)
+2. **证据与判定。** 正式前核对六个实际拓扑探针（四方向邻接可达、A/C 双向直连不可达）、三进程及独占 store、监督时钟、write/ingress/drop 与提交的原始来源、版本绑定、校验和及清理。BC 同批命中与关 gate 误发判定的离线证据见[离线验证](#断链证据离线验证2026-11-15)。实际 TCP 与进程回收仍待正式环境取证。
 3. **执行前置。** I5-R 仍在 `I5_RESOURCE_ISOLATION_REQUIRED` 停止。待取得合格宿主、完整 768 MiB 整批硬写入边界、受限构建与 daemon/store 隔离的运行接入及实际拒绝证据，再核准干净 revision、合同及资源附录、profile 与实际产物的绑定和版本兼容方案。精确执行包另行确认命令、资源与时限、失败保留和回收，然后取得当次运行授权。 [I5 资源放行条件](sw-g4-synthetic-i5-resource-isolation.md#下一实施包与放行条件) · [宿主恢复条件](sw-g4-synthetic-i5-linux-host-assessment.md#收口与恢复条件2026-11-10)
 
 #### 首轮合成矩阵所有者裁决（2026-11-15）
@@ -206,3 +206,11 @@ GOCACHE="$(git rev-parse --show-toplevel)/.cache/sw-g3-review/go-build" \
 项目所有者萝卜SAMA 确认沿用 `i3-small4-tcp-v1`（`docker-tcp-i3`）及上表现有五个 I5 profile。从 origin 的逻辑 `0 ms` 观察至 `30000 ms`。BASE 三种尺寸先各做三次独立样本，通过后按表顺序做四个故障用例各三次，共七个子用例、21 个独立样本。
 
 此裁决仅接受首轮 variant、观察窗及样本规模。BC 同批命中核对及关闭 gate 时误发判 `FAIL` 进入离线实施方案评审。代码与 profile 的实施、真实网络、签验及 I5-R 各待后续授权。其余 SW-G3 修订、HW1 交付证据、SW-G2 许可证评审及上游 Issue 按各自状态推进。 [当前状态](../status/current.md)
+
+#### 断链证据离线验证（2026-11-15）
+
+所有者随后授权实施并用 `memoryRunner` 验证两项判定。V3 新产物采用 manifest `observation_version=2`。校验器沿 A→B 已接收的 transfer ID 绑定 B 首次接纳的控制交换，重算同批 gate、T-B 提交代际、custody 快照与首槽阻塞。I5 profile、证据主 schema 3、控制协议和快照 DTO 版本均沿用现有合同。历史 `observation_version=1` 仍按原规则读取，两种 observation version 分开比较。 [V3 证据校验](../../tools/t0/internal/harness/evidence_v3.go) · [同批核对](../../tools/t0/internal/harness/network_gate_assessment.go)
+
+有效输入已进入 BC 预定批次但缺少 T-B，或关 gate 时存在已提交的发送决定，监督器在实际逻辑时刻终止业务。节点先核对整批决定再发布发送句柄。监督器记录控制关闭及回收结果，并按原始 ingress 对账本次放弃的待收帧。证据完整且环境、清理有效时输出可复核的 `FAIL`（退出码 `1`）。清理或控制回收失效时输出 `INVALID`（退出码 `2`）并保留已证实的实现违规。错时长单独判为注入失效，重算摘要后的错批绑定仍拒绝。 [归档入口](../../tools/t0/cmd/sw-v0-harness/process_runtime.go) · [离线用例](../../tools/t0/cmd/sw-v0-harness/process_gate_test.go)
+
+本轮验证使用真实合成 Node 和临时 store，网络和进程接口均由 `memoryRunner` 提供。I5-R 的宿主资源、真实 TCP、实际进程退出与清理仍待其运行门验证。

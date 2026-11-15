@@ -199,7 +199,7 @@ func runScenario(root string, p harness.ScenarioProfile, subID string, metadata 
 		for _, q := range pending {
 			pendingTimes = append(pendingTimes, q.at)
 		}
-		next := scenarioNext(now, snapshots, pendingTimes, downAt, upAt)
+		next := scenarioNext(now, snapshots, pendingTimes, downAt, upAt, p.Fault.Duration)
 		if next <= now {
 			return bundle, errors.New("scenario clock did not advance")
 		}
