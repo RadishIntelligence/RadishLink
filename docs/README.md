@@ -39,6 +39,7 @@
 - [硬件策略](hardware/hardware-strategy.md)
 - [低成本硬件验证计划](hardware/hardware-validation-plan.md)
 - [HW1 Armbian 固定镜像验签操作包](hardware/hw1-armbian-image-verification.md)
+- [HW1 设备与 BSP 预检评审](hardware/hw1-hw-g1-review.md)
 - [原型采购清单](hardware/poc-purchase-list.md)
 - [无线电合规前置条件](regulatory/radio-compliance.md)
 - [外场验证计划](testing/field-validation-plan.md)
