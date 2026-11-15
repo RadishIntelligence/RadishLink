@@ -289,7 +289,7 @@ Armbian 官方下载入口的 HEAD 请求落到同名归档，响应长度为 39
 
 #### 发布与验签
 
-- Armbian 仍将 `26.8.1 Minimal (CLI)` Debian 13、vendor `6.1.115` 列为稳定推荐镜像。11 月 15 日对官方入口及同名归档只读复核，两处镜像 HEAD 均返回 394195116 bytes，`.sha` 绑定上节同名文件与预期 SHA-256，833-byte `.asc` 的 SHA-256 与上节一致。本轮未取得镜像本体或进行密码学验签。[Armbian 板型页](https://armbian.com/boards/radxa-zero3) · [官方下载入口](https://dl.armbian.com/radxa-zero3/Trixie_vendor_minimal) · [同名归档](https://k-space.ee.armbian.com/dl/radxa-zero3/archive/)
+- Armbian 将 `26.8.1 Minimal (CLI)` Debian 13、vendor `6.1.115` 列为稳定推荐镜像。11 月 15 日的发布元数据复核中，两处镜像 HEAD 均返回 394195116 bytes，`.sha` 绑定上节同名文件与预期 SHA-256，833-byte `.asc` 的 SHA-256 与上节一致。该次复核范围为 HEAD 和旁文件。[Armbian 板型页](https://armbian.com/boards/radxa-zero3) · [官方下载入口](https://dl.armbian.com/radxa-zero3/Trixie_vendor_minimal) · [同名归档](https://k-space.ee.armbian.com/dl/radxa-zero3/archive/)
 - 官方验签说明给出公钥来源，示例主钥指纹 `DF00FAF1C577104B50BF1D0093D6889F9F0E78D5` 针对另一镜像。固定候选的签名键仍须在验签时绑定到已确认的官方主钥，若使用签名子钥，须核对其有效性及归属。当前 Mac PATH 有 `shasum` 和 `xz`，未找到 `gpg`、`gpgv` 或 `sq`。待指定已有合格工具的主机，或单独评审工具准备。[Armbian 官方验签说明](https://docs.armbian.com/getting-started/choosing-an-image/#download-and-verification)
 - 后续验签绑定固定文件名、长度及镜像和签名摘要。使用独立钥匙环，显式验证压缩本体与 detached signature，留存工具版本、退出码、实际签名键及已核准主钥指纹。输入漂移、缺有效签名或身份不符时停止，保留失败证据。通过后再进入镜像内容及兼容性复核，写卡仍走 HW-G3。
 
@@ -304,7 +304,7 @@ Armbian 官方下载入口的 HEAD 请求落到同名归档，响应长度为 39
 
 `HW1-06/08` 还缺可信 boot/单调时间与 UTC 区间、可执行的 CPU/RSS/磁盘与写入边界、独立监督时限，以及原连接和任务关闭、回收证据。应用层签验、恢复及 B 不可解密在真实接线中取证。见 [Linux ARM64 接线准入](../testing/node-security-integration-acceptance.md#linux-arm64-接线准入)和[软件证据映射](../status/project-execution-plan.md#i5-与-hw1p0-的证据依赖)。
 
-下一步准备固定镜像验签的操作包，先确定可用主机、工具版本、官方主钥的核对来源、固定输入与证据留存，再按授权执行压缩镜像完整性和签名验证。验签通过后静态核对镜像内 DTB、RTL8153 驱动与首次配置路径。写卡及真实测试待对应操作包授权。
+[固定镜像离线验签](hw1-armbian-image-verification.md#离线验签记录2026-11-15)已在通用 `Debian13-ARM64` 通过。[静态核对结果](hw1-armbian-image-verification.md#静态兼容性核对结果2026-11-15)确认镜像包含 U-Boot 3E 配置、可用的 GMAC/USB Host 节点、`r8152` 模块和完整 microSD 引导布局。实际 U-Boot 选型、`ttyS2` 与 `ttyFIQ0` 的首启表现、双链路以及备卡恢复仍需上板取证。写卡及真实测试待对应操作包授权。
 
 | 决定 | 触发条件 |
 | --- | --- |

@@ -1,6 +1,6 @@
 # RadishLink 当前状态
 
-更新日期：2026-11-15（HW1 预算确认与镜像预检，无新增实验运行证据）
+更新日期：2026-11-15（HW1 固定镜像离线验签及静态兼容性核对）
 
 规划导航整理：2026-11-01。[能力地图](../topics.md)连接原工作包、实施切片与验收；导航整理不改变产品或实验结果，11 月 2 日接续见[当前优先级](#当前优先级)。
 
@@ -49,7 +49,7 @@ I1–I5-I 已提交并通过有限离线验证；容量核验和受限双构建 
 | mls-rs `0.56.0` | D2：同一固定 94-package 图 Phase A `PASS`；D 的旧 feature-gate `STOP` 保留 | [Phase A 记录](../testing/sw-g2-mls-rs-phase-a-authorization.md)；工具通过不等于分发义务或安全适配完成 |
 | mls-rs 许可证证据 | R1/R1b 传输负向；R1c-R 为 `STOP/license-evidence`；R1d-L 为 `STOP/license-disposition` | [补证与复核包](../testing/sw-g2-mls-rs-license-notice-review.md)、[处置评审](../testing/sw-g2-mls-rs-license-disposition-review.md)；R2 前置未满足 |
 | `SW-G2 / SW-V1..V3` | E2EE 决策未通过，后续正式场景未执行 | [决策包](../security/e2ee-sw-g2-decision-package.md)；没有已验证 E2EE 或产品软件闭环 |
-| `HW` | 仍处于 `HW-G0`。所有者确认继续三节点有线评审，首轮上限 2000 元，后续预留 1000 元。订单差额、Armbian 本体验签和 BSP 前置证据待核 | [成本复核](../hardware/poc-purchase-list.md#hw1-决策成本复核2026-11-15)、[决策预检](../hardware/hardware-validation-plan.md#hw1-决策预检2026-11-15)、[台架验收表](../hardware/hardware-validation-plan.md#hw1-台架验收表2026-11-08) |
+| `HW` | 仍处于 `HW-G0`。首轮上限 2000 元，后续预留 1000 元。Armbian 固定镜像离线验签通过，静态核对已记录。交付版号、实际启动与串口、双网口和备卡恢复待验 | [成本复核](../hardware/poc-purchase-list.md#hw1-决策成本复核2026-11-15)、[镜像静态核对](../hardware/hw1-armbian-image-verification.md#静态兼容性核对结果2026-11-15)、[台架验收表](../hardware/hardware-validation-plan.md#hw1-台架验收表2026-11-08) |
 | `RF` | 上海地区输入已确认，SKU/配置与法规结论未关闭，保持 `RF-R0` | [法规预检](../regulatory/radio-compliance.md)，采购与发射暂停 |
 
 mls-rs 当前实质缺口：R1c-R 已为 9 个 mls-rs package 取得 Apache-2.0/MIT 正文；`debug_tree 0.4.0` 缺绑定固定源码的 MIT notice/holder，`r-efi 6.0.0` 的 `AUTHORS` 含完整 MIT 正文与归属，但缺另两项声明 alternative 的完整正文。前者的 R1d-U-P/I 已完成澄清设计及离线 helper，公开发送 X 与只读收集 R 均未执行；后者等待独立法律评审后再分流。这是证据和处置缺口，不是许可证不存在、违法或候选淘汰结论。
@@ -60,7 +60,7 @@ mls-rs 当前实质缺口：R1c-R 已为 9 个 mls-rs package 取得 Apache-2.0/
 
 | 顺位 | 必须完成的任务 | 必要阻塞 / 退出结果 |
 | --- | --- | --- |
-| 1 | HW1 完整三节点预算与镜像/BSP 可执行性决定 | 预算规划已确认。下一步准备固定 Armbian 镜像验签操作包，核对验签主机、工具与官方主钥。验签通过后核对 DTB、双网口和首次配置路径，订单差额留到采购评审核对。见[镜像和交付条件](../hardware/hardware-validation-plan.md#hw1-决策预检2026-11-15) |
+| 1 | HW1 完整三节点预算与镜像/BSP 可执行性决定 | 已完成[离线验签](../hardware/hw1-armbian-image-verification.md#离线验签记录2026-11-15)与[镜像静态核对](../hardware/hw1-armbian-image-verification.md#静态兼容性核对结果2026-11-15)。下一步将交付版号、网卡规格与静态依据纳入 HW-G1，优先明确实际 U-Boot 选型和无 DHCP 串口首启的验收条件。订单差额留到采购评审 |
 | 2 | SW-G2 固定候选的有限处置批次 | 落实 debug_tree 公开账号/逐字预审、r-efi 独立评审者与材料范围；有证据再按 R2/Phase B 前置推进。无外部条件则等待，不重复取证或并行扩展密码候选 |
 | 3 | 拥有者循环的一个离线收尾批次 | 只接任务派发、结果唤醒、关闭与迟到结果归还，验证原配额和事务边界后结束；范围见[接线工作包](../architecture/node-outbound-owner.md#收口范围与退出条件2026-11-10) |
 | 4 | 条件具备后接通最小真实文字链 | 可用 HW1、固定逐跳适配层、安全候选、可信时间及硬资源/时限/关闭证据齐备后，接真实解析、签验、工作池和传输；A→B→C 与 B 不可解密分别留证 |
